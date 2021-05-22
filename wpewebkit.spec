@@ -94,6 +94,12 @@ files for developing applications that use %{name}
 # is only needed for x86_64.
 %global _dwz_max_die_limit_x86_64 250000000
 
+# This package fails to build with LTO due to undefined symbols.  LTO
+# was disabled in openSUSE as well, but with no real explanation why
+# beyond the undefined symbols.  It really shold be investigated further.
+# Disable LTO
+%define _lto_cflags %{nil}
+
 %ifarch s390 aarch64
 # Use linker flags to reduce memory consumption - on other arches the ld.gold is
 # used and also it doesn't have the --reduce-memory-overheads option
@@ -102,14 +108,9 @@ files for developing applications that use %{name}
 
 # Decrease debuginfo even on ix86 because of:
 # https://bugs.webkit.org/show_bug.cgi?id=140176
-%ifarch s390 s390x %{arm} %{ix86} ppc %{power64} %{mips}
+%ifarch s390x %{arm} %{ix86} %{power64} %{mips}
 # Decrease debuginfo verbosity to reduce memory consumption even more
 %global optflags %(echo %{optflags} | sed 's/-g /-g1 /')
-%endif
-
-%ifarch ppc
-# Use linker flag -relax to get WebKit build under ppc(32) with JIT disabled
-%global optflags %{optflags} -Wl,-relax
 %endif
 
 # Disable ld.gold on s390 as it does not have it.
@@ -123,6 +124,9 @@ files for developing applications that use %{name}
 %ifarch s390 s390x ppc %{power64}
   -DENABLE_JIT=OFF \
   -DUSE_SYSTEM_MALLOC=ON \
+%endif
+%ifarch aarch64
+  -DUSE_64KB_PAGE_BLOCK=ON \
 %endif
   -GNinja
 
