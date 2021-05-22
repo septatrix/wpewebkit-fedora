@@ -8,57 +8,60 @@ cp -p %1 _license_files/$(echo '%1' | sed -e 's!/!.!g')
 # seems to fail linking with gcc?  clang works though
 
 Name:           wpewebkit
-Version:        2.30.4
-Release:        2%{?dist}
+Version:        2.32.1
+Release:        1%{?dist}
 Summary:        A WebKit port optimized for low-end devices
 
 License:        LGPLv2 and BSD
-URL:            http://www.%{name}.org/
-Source0:        http://wpewebkit.org/releases/%{name}-%{version}.tar.xz
+URL:            https://www.%{name}.org/
+Source0:        https://wpewebkit.org/releases/%{name}-%{version}.tar.xz
 
-# Explicitly specify python2 over python to avoid build fails
-Patch0:     python2.patch
-
-BuildRequires:  openjpeg2-devel
-BuildRequires:  bison
-BuildRequires:  cairo-devel
-BuildRequires:  cmake
-BuildRequires:  libwpe-devel
-BuildRequires:  wpebackend-fdo-devel
-BuildRequires:  flex
-BuildRequires:  gcc-c++
-BuildRequires:  gnutls-devel
-BuildRequires:  gperf
-BuildRequires:  gstreamer1-devel
-BuildRequires:  gstreamer1-plugins-base-devel
-BuildRequires:  gstreamer1-plugins-bad-free-devel
-BuildRequires:  harfbuzz-devel
-BuildRequires:  libicu-devel
-BuildRequires:  libjpeg-devel
-BuildRequires:  libpng-devel
-BuildRequires:  libsoup-devel
-BuildRequires:  libwebp-devel
-BuildRequires:  libxslt-devel
-BuildRequires:  libwayland-client-devel
-BuildRequires:  libwayland-egl-devel
-BuildRequires:  libwayland-server-devel
-BuildRequires:  mesa-libgbm-devel
-BuildRequires:  wayland-protocols-devel
-BuildRequires:  mesa-libEGL-devel
-BuildRequires:  perl-File-Copy-Recursive
-BuildRequires:  perl-JSON-PP
-BuildRequires:  perl-Switch
-BuildRequires:  python2
-BuildRequires:  ruby
-BuildRequires:  rubygems
-BuildRequires:  sqlite-devel
-BuildRequires:  woff2-devel
-BuildRequires:  libepoxy-devel
-BuildRequires:  atk-devel at-spi2-atk-devel
+BuildRequires: atk-devel at-spi2-atk-devel
+BuildRequires: bison
+BuildRequires: cairo-devel
+BuildRequires: cmake
+BuildRequires: egl-wayland-devel
+BuildRequires: flex
+BuildRequires: gcc-c++
+BuildRequires: gnutls-devel
+BuildRequires: gperf
+BuildRequires: gstreamer1-devel
+BuildRequires: gstreamer1-plugins-bad-free-devel
+BuildRequires: gstreamer1-plugins-base-devel
+BuildRequires: harfbuzz-devel
+BuildRequires: libepoxy-devel
+BuildRequires: libicu-devel
+BuildRequires: libjpeg-devel
+BuildRequires: libpng-devel
+BuildRequires: libsoup-devel
+BuildRequires: libwebp-devel
+BuildRequires: libwpe-devel
+BuildRequires: libxslt-devel
+BuildRequires: mesa-libEGL-devel
+BuildRequires: mesa-libgbm-devel
+BuildRequires: ninja-build
+BuildRequires: openjpeg2-devel
+BuildRequires: perl(English)
+BuildRequires: perl(File::Copy::Recursive)
+BuildRequires: perl-File-Find
+BuildRequires: perl(FindBin)
+BuildRequires: perl(JSON::PP)
+BuildRequires: perl(lib)
+BuildRequires: perl(Switch)
+BuildRequires: python3
+BuildRequires: ruby
+BuildRequires: rubygem-json
+BuildRequires: rubygems
+BuildRequires: sqlite-devel
+BuildRequires: systemd-devel
+BuildRequires: wayland-devel
+BuildRequires: wayland-protocols-devel
+BuildRequires: woff2-devel
+BuildRequires: wpebackend-fdo-devel
 BuildRequires: bubblewrap
+BuildRequires: libgcrypt-devel
 BuildRequires: libseccomp-devel
 BuildRequires: xdg-dbus-proxy
-BuildRequires: libgcrypt-devel
 Requires: atk
 Requires: at-spi2-atk
 
@@ -110,14 +113,11 @@ files for developing applications that use %{name}
 %endif
 
 # Disable ld.gold on s390 as it does not have it.
-# Also for aarch64 as the support is in upstream, but not packaged in Fedora.
 %cmake \
   -DPORT=WPE \
   -DCMAKE_BUILD_TYPE=Release \
   -DENABLE_MINIBROWSER=ON \
-  -DUSE_SYSTEMD=OFF \
-  -DENABLE_ACCESSIBILITY=OFF \
-%ifarch s390 aarch64
+%ifarch s390
   -DUSE_LD_GOLD=OFF \
 %endif
 %ifarch s390 s390x ppc %{power64}
@@ -126,10 +126,13 @@ files for developing applications that use %{name}
 %endif
   -GNinja
 
-%ninja_build -C %{_target_platform}
+
+# Show the build time in the status
+export NINJA_STATUS="[%f/%t][%e] "
+%cmake_build
 
 %install
-%ninja_install -C %{_target_platform}
+%cmake_install
 
 # Finally, copy over and rename various files for %license inclusion
 %add_to_license_files Source/JavaScriptCore/COPYING.LIB
@@ -174,6 +177,9 @@ files for developing applications that use %{name}
 
 
 %changelog
+* Sat May 22 2021 Philippe Normand <philn@igalia.com> - 2.32.1-1
+- New version
+
 * Fri Jan 31 2020 Fedora Release Engineering <releng@fedoraproject.org> - 2.26.1-2
 - Rebuilt for https://fedoraproject.org/wiki/Fedora_32_Mass_Rebuild
 
