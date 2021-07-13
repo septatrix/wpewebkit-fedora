@@ -8,7 +8,7 @@ cp -p %1 _license_files/$(echo '%1' | sed -e 's!/!.!g')
 # seems to fail linking with gcc?  clang works though
 
 Name:           wpewebkit
-Version:        2.32.1
+Version:        2.32.2
 Release:        1%{?dist}
 Summary:        A WebKit port optimized for low-end devices
 
@@ -181,6 +181,9 @@ export NINJA_STATUS="[%f/%t][%e] "
 
 
 %changelog
+* Tue Jul 13 2021 Philippe Normand <philn@igalia.com> - 2.32.2-1
+- New version
+
 * Sat May 22 2021 Philippe Normand <philn@igalia.com> - 2.32.1-1
 - New version
 
