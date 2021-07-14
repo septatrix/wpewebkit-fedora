@@ -78,8 +78,6 @@ Requires:       %{name}%{?_isa} = %{version}-%{release}
 The %{name}-devel package contains libraries, build data, and header
 files for developing applications that use %{name}
 
-%define _lto_cflags %{nil}
-
 %prep
 %autosetup -p1 -n wpewebkit-%{version}
 
@@ -99,12 +97,6 @@ files for developing applications that use %{name}
 # beyond the undefined symbols.  It really shold be investigated further.
 # Disable LTO
 %define _lto_cflags %{nil}
-
-%ifarch s390 aarch64
-# Use linker flags to reduce memory consumption - on other arches the ld.gold is
-# used and also it doesn't have the --reduce-memory-overheads option
-%global optflags %{optflags} -Wl,--no-keep-memory -Wl,--reduce-memory-overheads
-%endif
 
 # Decrease debuginfo even on ix86 because of:
 # https://bugs.webkit.org/show_bug.cgi?id=140176
