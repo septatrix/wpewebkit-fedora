@@ -5,8 +5,6 @@
         mkdir -p _license_files ; \
 cp -p %1 _license_files/$(echo '%1' | sed -e 's!/!.!g')
 
-# seems to fail linking with gcc?  clang works though
-
 Name:           wpewebkit
 Version:        2.32.2
 Release:        1%{?dist}
@@ -105,6 +103,11 @@ files for developing applications that use %{name}
 %global optflags %(echo %{optflags} | sed 's/-g /-g1 /')
 %endif
 
+# aarch64 build with debug symbols is endless (6+ hours).
+%ifarch aarch64
+%global optflags %(echo %{optflags} | sed 's/-g //')
+%endif
+
 # Disable ld.gold on s390 as it does not have it.
 %cmake \
   -DPORT=WPE \
@@ -116,9 +119,6 @@ files for developing applications that use %{name}
 %ifarch s390 s390x ppc %{power64}
   -DENABLE_JIT=OFF \
   -DUSE_SYSTEM_MALLOC=ON \
-%endif
-%ifarch aarch64
-  -DUSE_64KB_PAGE_BLOCK=ON \
 %endif
   -GNinja
 
