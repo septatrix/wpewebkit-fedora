@@ -103,11 +103,6 @@ files for developing applications that use %{name}
 %global optflags %(echo %{optflags} | sed 's/-g /-g1 /')
 %endif
 
-# aarch64 build with debug symbols is endless (6+ hours).
-%ifarch aarch64
-%global optflags %(echo %{optflags} | sed 's/-g //')
-%endif
-
 # Disable ld.gold on s390 as it does not have it.
 %cmake \
   -DPORT=WPE \
