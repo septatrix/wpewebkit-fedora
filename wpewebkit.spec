@@ -168,6 +168,9 @@ export NINJA_STATUS="[%f/%t][%e] "
 
 
 %changelog
+* Sat Oct 09 2021 Philippe Normand <philn@igalia.com> - 2.32.4-1
+- New version
+
 * Sat Jul 24 2021 Philippe Normand <philn@igalia.com> - 2.32.3-1
 - New version
 
