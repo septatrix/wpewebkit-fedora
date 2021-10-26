@@ -108,6 +108,7 @@ files for developing applications that use %{name}
   -DPORT=WPE \
   -DCMAKE_BUILD_TYPE=Release \
   -DENABLE_MINIBROWSER=ON \
+  -DUSE_SOUP2=ON \
 %ifarch s390
   -DUSE_LD_GOLD=OFF \
 %endif
