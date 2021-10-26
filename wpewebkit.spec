@@ -60,6 +60,7 @@ BuildRequires: bubblewrap
 BuildRequires: libgcrypt-devel
 BuildRequires: libseccomp-devel
 BuildRequires: xdg-dbus-proxy
+BuildRequires: lcms2-devel
 Requires: atk
 Requires: at-spi2-atk
 
