@@ -6,7 +6,7 @@
 cp -p %1 _license_files/$(echo '%1' | sed -e 's!/!.!g')
 
 Name:           wpewebkit
-Version:        2.34.1
+Version:        2.34.2
 Release:        1%{?dist}
 Summary:        A WebKit port optimized for low-end devices
 
@@ -170,6 +170,9 @@ export NINJA_STATUS="[%f/%t][%e] "
 
 
 %changelog
+* Wed Nov 24 2021 Philippe Normand <philn@igalia.com> - 2.34.2-1
+- New version
+
 * Tue Oct 26 2021 Philippe Normand <philn@igalia.com> - 2.34.1-1
 - New version
 
