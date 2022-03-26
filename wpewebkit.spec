@@ -110,13 +110,7 @@ files for developing applications that use %{name}
   -DCMAKE_BUILD_TYPE=Release \
   -DENABLE_MINIBROWSER=ON \
   -DUSE_SOUP2=ON \
-%ifarch s390
   -DUSE_LD_GOLD=OFF \
-%endif
-%ifarch s390 s390x ppc %{power64}
-  -DENABLE_JIT=OFF \
-  -DUSE_SYSTEM_MALLOC=ON \
-%endif
   -GNinja
 
 
