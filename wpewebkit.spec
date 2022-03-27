@@ -122,27 +122,37 @@ export NINJA_STATUS="[%f/%t][%e] "
 %cmake_install
 
 # Finally, copy over and rename various files for %license inclusion
-%add_to_license_files Source/JavaScriptCore/COPYING.LIB
-%add_to_license_files Source/ThirdParty/ANGLE/LICENSE
+%add_to_license_files Source/JavaScriptCore/disassembler/zydis/LICENSE-zydis.txt
+%add_to_license_files Source/JavaScriptCore/disassembler/zydis/LICENSE-zycore.txt
+%add_to_license_files Source/WebCore/LICENSE-LGPL-2
+%add_to_license_files Source/WebCore/LICENSE-APPLE
+%add_to_license_files Source/WebCore/LICENSE-LGPL-2.1
+%add_to_license_files Source/WTF/LICENSE-libc++.txt
+%add_to_license_files Source/WTF/wtf/dtoa/LICENSE
+%add_to_license_files Source/WTF/LICENSE-LLVM.txt
+%add_to_license_files Source/WTF/icu/LICENSE
+%add_to_license_files Source/WebInspectorUI/UserInterface/External/Esprima/LICENSE
+%add_to_license_files Source/WebInspectorUI/UserInterface/External/CodeMirror/LICENSE
+%add_to_license_files Source/WebInspectorUI/UserInterface/External/three.js/LICENSE
+%add_to_license_files Source/WebInspectorUI/UserInterface/External/CSSDocumentation/LICENSE
+%add_to_license_files Source/ThirdParty/gtest/LICENSE
+%add_to_license_files Source/ThirdParty/ANGLE/src/libANGLE/renderer/vulkan/shaders/src/third_party/ffx_spd/LICENSE
+%add_to_license_files Source/ThirdParty/ANGLE/src/third_party/ceval/LICENSE
+%add_to_license_files Source/ThirdParty/ANGLE/src/third_party/volk/LICENSE.md
+%add_to_license_files Source/ThirdParty/ANGLE/src/third_party/libXNVCtrl/LICENSE
 %add_to_license_files Source/ThirdParty/ANGLE/src/common/third_party/smhasher/LICENSE
 %add_to_license_files Source/ThirdParty/ANGLE/src/common/third_party/xxhash/LICENSE
-%add_to_license_files Source/ThirdParty/ANGLE/src/libANGLE/renderer/vulkan/shaders/src/third_party/ffx_spd/LICENSE
 %add_to_license_files Source/ThirdParty/ANGLE/src/tests/test_utils/third_party/LICENSE
-%add_to_license_files Source/ThirdParty/ANGLE/src/third_party/compiler/LICENSE
-%add_to_license_files Source/ThirdParty/ANGLE/src/third_party/libXNVCtrl/LICENSE
-%add_to_license_files Source/ThirdParty/ANGLE/src/third_party/volk/LICENSE.md
+%add_to_license_files Source/ThirdParty/ANGLE/LICENSE
+%add_to_license_files Source/ThirdParty/ANGLE/third_party/proguard/LICENSE
+%add_to_license_files Source/ThirdParty/ANGLE/third_party/turbine/LICENSE
+%add_to_license_files Source/ThirdParty/ANGLE/third_party/bazel/LICENSE
+%add_to_license_files Source/ThirdParty/ANGLE/third_party/colorama/LICENSE
+%add_to_license_files Source/ThirdParty/ANGLE/third_party/android_system_sdk/LICENSE
+%add_to_license_files Source/ThirdParty/ANGLE/third_party/r8/LICENSE
 %add_to_license_files Source/ThirdParty/ANGLE/tools/flex-bison/third_party/m4sugar/LICENSE
 %add_to_license_files Source/ThirdParty/ANGLE/tools/flex-bison/third_party/skeletons/LICENSE
 %add_to_license_files Source/ThirdParty/ANGLE/util/windows/third_party/StackWalker/LICENSE
-%add_to_license_files Source/ThirdParty/gtest/LICENSE
-%add_to_license_files Source/WebCore/LICENSE-APPLE
-%add_to_license_files Source/WebCore/LICENSE-LGPL-2
-%add_to_license_files Source/WebCore/LICENSE-LGPL-2.1
-%add_to_license_files Source/WebInspectorUI/UserInterface/External/CodeMirror/LICENSE
-%add_to_license_files Source/WebInspectorUI/UserInterface/External/Esprima/LICENSE
-%add_to_license_files Source/WebInspectorUI/UserInterface/External/three.js/LICENSE
-%add_to_license_files Source/WTF/icu/LICENSE
-%add_to_license_files Source/WTF/wtf/dtoa/LICENSE
 
 %files
 %{_bindir}/WPEWebDriver
@@ -170,7 +180,7 @@ export NINJA_STATUS="[%f/%t][%e] "
 * Fri Mar 25 2022 Philippe Normand <philn@igalia.com> - 2.34.6-1
 - New version
 
-* Fri Feg 11 2022 Philippe Normand <philn@igalia.com> - 2.34.5-1
+* Fri Feb 11 2022 Philippe Normand <philn@igalia.com> - 2.34.5-1
 - New version
 
 * Tue Jan 21 2022 Philippe Normand <philn@igalia.com> - 2.34.4-1
