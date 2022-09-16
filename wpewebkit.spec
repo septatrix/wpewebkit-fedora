@@ -28,6 +28,7 @@ BuildRequires: gstreamer1-devel
 BuildRequires: gstreamer1-plugins-bad-free-devel
 BuildRequires: gstreamer1-plugins-base-devel
 BuildRequires: harfbuzz-devel
+BuildRequires: pkgconfig(gobject-introspection-1.0)
 BuildRequires: libepoxy-devel
 BuildRequires: libicu-devel
 BuildRequires: libjpeg-devel
@@ -175,6 +176,9 @@ export NINJA_STATUS="[%f/%t][%e] "
 
 
 %changelog
+* Fri Sep 16 2022 Philippe Normand <philn@igalia.com> - 2.38.0-3
+- 2.38, fresh off the oven. Build attempt #3
+
 * Fri Sep 16 2022 Philippe Normand <philn@igalia.com> - 2.38.0-2
 - 2.38, fresh off the oven. Build attempt #2
 
