@@ -21,6 +21,7 @@ BuildRequires: cmake
 BuildRequires: egl-wayland-devel
 BuildRequires: flex
 BuildRequires: gcc-c++
+BuildRequires: gi-docgen
 BuildRequires: gnutls-devel
 BuildRequires: gperf
 BuildRequires: gstreamer1-devel
