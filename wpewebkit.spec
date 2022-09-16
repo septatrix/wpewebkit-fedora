@@ -175,7 +175,10 @@ export NINJA_STATUS="[%f/%t][%e] "
 
 
 %changelog
-* Fri Aug 26 2022 Philippe Normand <philn@igalia.com> - 2.38.0-1
+* Fri Sep 16 2022 Philippe Normand <philn@igalia.com> - 2.38.0-2
+- 2.38, fresh off the oven. Build attempt #2
+
+* Fri Sep 16 2022 Philippe Normand <philn@igalia.com> - 2.38.0-1
 - 2.38, fresh off the oven. Build attempt #1
 
 * Fri Aug 26 2022 Philippe Normand <philn@igalia.com> - 2.36.7-1
