@@ -20,7 +20,7 @@ BuildRequires: cairo-devel
 BuildRequires: cmake
 BuildRequires: egl-wayland-devel
 BuildRequires: flex
-BuildRequires: gcc-c++
+BuildRequires: clang
 BuildRequires: gi-docgen
 BuildRequires: gnutls-devel
 BuildRequires: gperf
@@ -106,13 +106,13 @@ files for developing applications that use %{name}
 %global optflags %(echo %{optflags} | sed 's/-g /-g1 /')
 %endif
 
-# Disable ld.gold on s390 as it does not have it.
 %cmake \
+  -DCMAKE_C_COMPILER=clang \
+  -DCMAKE_CXX_COMPILER=clang++ \
   -DPORT=WPE \
   -DCMAKE_BUILD_TYPE=Release \
   -DENABLE_MINIBROWSER=ON \
   -DUSE_SOUP2=ON \
-  -DUSE_LD_GOLD=OFF \
   -GNinja
 
 
@@ -176,6 +176,9 @@ export NINJA_STATUS="[%f/%t][%e] "
 
 
 %changelog
+* Sat Sep 24 2022 Philippe Normand <philn@igalia.com> - 2.38.0-4
+- 2.38, fresh off the oven. Build attempt #4
+
 * Fri Sep 16 2022 Philippe Normand <philn@igalia.com> - 2.38.0-3
 - 2.38, fresh off the oven. Build attempt #3
 
