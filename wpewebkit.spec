@@ -114,6 +114,8 @@ files for developing applications that use %{name}
   -DCMAKE_BUILD_TYPE=Release \
   -DENABLE_MINIBROWSER=ON \
   -DUSE_SOUP2=ON \
+  -DENABLE_DOCUMENTATION=OFF \
+  -DENABLE_INTROSPECTION=OFF \
   -GNinja
 
 
@@ -177,6 +179,9 @@ export NINJA_STATUS="[%f/%t][%e] "
 
 
 %changelog
+* Sat Sep 24 2022 Philippe Normand <philn@igalia.com> - 2.38.0-6
+- 2.38, fresh off the oven. Build attempt #6
+
 * Sat Sep 24 2022 Philippe Normand <philn@igalia.com> - 2.38.0-5
 - 2.38, fresh off the oven. Build attempt #5
 
