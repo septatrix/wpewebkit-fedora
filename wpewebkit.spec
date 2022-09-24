@@ -14,6 +14,8 @@ License:        LGPLv2 and BSD
 URL:            https://www.%{name}.org/
 Source0:        https://wpewebkit.org/releases/%{name}-%{version}.tar.xz
 
+Patch0:         fix-user-style-sheet.patch
+
 BuildRequires: atk-devel at-spi2-atk-devel
 BuildRequires: bison
 BuildRequires: cairo-devel
@@ -179,6 +181,9 @@ export NINJA_STATUS="[%f/%t][%e] "
 
 
 %changelog
+* Sat Sep 24 2022 Philippe Normand <philn@igalia.com> - 2.38.0-7
+- 2.38, with patch to fix generated user style sheets.
+
 * Sat Sep 24 2022 Philippe Normand <philn@igalia.com> - 2.38.0-6
 - 2.38, fresh off the oven. Build attempt #6
 
