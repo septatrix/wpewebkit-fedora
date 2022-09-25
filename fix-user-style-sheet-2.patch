@@ -1,0 +1,33 @@
+diff --git a/Source/WebCore/rendering/RenderTheme.h b/Source/WebCore/rendering/RenderTheme.h
+index ba6e1dc54ee6..9649af67a660 100644
+--- a/Source/WebCore/rendering/RenderTheme.h
++++ b/Source/WebCore/rendering/RenderTheme.h
+@@ -80,20 +80,20 @@ public:
+ 
+     // These methods return the theme's extra style sheets rules, to let each platform
+     // adjust the default CSS rules in html.css, quirks.css, mediaControls.css, or plugIns.css
+-    virtual String extraDefaultStyleSheet() { return String(); }
+-    virtual String extraQuirksStyleSheet() { return String(); }
+-    virtual String extraPlugInsStyleSheet() { return String(); }
++    virtual String extraDefaultStyleSheet() { return emptyString(); }
++    virtual String extraQuirksStyleSheet() { return emptyString(); }
++    virtual String extraPlugInsStyleSheet() { return emptyString(); }
+ #if ENABLE(VIDEO)
+-    virtual String mediaControlsStyleSheet() { return String(); }
+-    virtual String extraMediaControlsStyleSheet() { return String(); }
++    virtual String mediaControlsStyleSheet() { return emptyString(); }
++    virtual String extraMediaControlsStyleSheet() { return emptyString(); }
+     virtual Vector<String, 2> mediaControlsScripts() { return { }; }
+ #if ENABLE(MODERN_MEDIA_CONTROLS)
+-    virtual String mediaControlsBase64StringForIconNameAndType(const String&, const String&) { return String(); }
+-    virtual String mediaControlsFormattedStringForDuration(double) { return String(); }
++    virtual String mediaControlsBase64StringForIconNameAndType(const String&, const String&) { return emptyString(); }
++    virtual String mediaControlsFormattedStringForDuration(double) { return emptyString(); }
+ #endif // ENABLE(MODERN_MEDIA_CONTROLS)
+ #endif // ENABLE(VIDEO)
+ #if ENABLE(FULLSCREEN_API)
+-    virtual String extraFullScreenStyleSheet() { return String(); }
++    virtual String extraFullScreenStyleSheet() { return emptyString(); }
+ #endif
+ #if ENABLE(ATTACHMENT_ELEMENT)
+     virtual String attachmentStyleSheet() const;

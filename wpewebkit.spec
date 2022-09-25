@@ -7,7 +7,7 @@ cp -p %1 _license_files/$(echo '%1' | sed -e 's!/!.!g')
 
 Name:           wpewebkit
 Version:        2.38.0
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        A WebKit port optimized for low-end devices
 
 License:        LGPLv2 and BSD
@@ -15,6 +15,7 @@ URL:            https://www.%{name}.org/
 Source0:        https://wpewebkit.org/releases/%{name}-%{version}.tar.xz
 
 Patch0:         fix-user-style-sheet.patch
+Patch1:         fix-user-style-sheet-2.patch
 
 BuildRequires: atk-devel at-spi2-atk-devel
 BuildRequires: bison
@@ -181,6 +182,9 @@ export NINJA_STATUS="[%f/%t][%e] "
 
 
 %changelog
+* Sun Sep 25 2022 Philippe Normand <philn@igalia.com> - 2.38.0-8
+- 2.38, with patch to fix generated user style sheets, #2.
+
 * Sat Sep 24 2022 Philippe Normand <philn@igalia.com> - 2.38.0-7
 - 2.38, with patch to fix generated user style sheets.
 
