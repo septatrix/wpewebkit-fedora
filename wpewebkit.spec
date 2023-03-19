@@ -6,7 +6,7 @@
 cp -p %1 _license_files/$(echo '%1' | sed -e 's!/!.!g')
 
 Name:           wpewebkit
-Version:        2.38.5
+Version:        2.40.0
 Release:        1%{?dist}
 Summary:        A WebKit port optimized for low-end devices
 
@@ -22,7 +22,6 @@ BuildRequires: egl-wayland-devel
 BuildRequires: flex
 BuildRequires: clang
 BuildRequires: gi-docgen
-BuildRequires: gnutls-devel
 BuildRequires: gperf
 BuildRequires: gstreamer1-devel
 BuildRequires: gstreamer1-plugins-bad-free-devel
@@ -34,7 +33,6 @@ BuildRequires: libepoxy-devel
 BuildRequires: libicu-devel
 BuildRequires: libjpeg-devel
 BuildRequires: libpng-devel
-BuildRequires: libsoup-devel
 BuildRequires: libwebp-devel
 BuildRequires: libwpe-devel
 BuildRequires: libxslt-devel
@@ -42,6 +40,7 @@ BuildRequires: mesa-libEGL-devel
 BuildRequires: mesa-libgbm-devel
 BuildRequires: ninja-build
 BuildRequires: openjpeg2-devel
+BuildRequires: openssl-devel
 BuildRequires: perl(English)
 BuildRequires: perl(File::Copy::Recursive)
 BuildRequires: perl-File-Find
@@ -55,6 +54,7 @@ BuildRequires: rubygem-json
 BuildRequires: rubygems
 BuildRequires: sqlite-devel
 BuildRequires: systemd-devel
+BuildRequires: unifdef
 BuildRequires: wayland-devel
 BuildRequires: wayland-protocols-devel
 BuildRequires: woff2-devel
@@ -64,6 +64,12 @@ BuildRequires: libgcrypt-devel
 BuildRequires: libseccomp-devel
 BuildRequires: xdg-dbus-proxy
 BuildRequires: lcms2-devel
+
+BuildRequires: pkgconfig(libavif)
+BuildRequires: pkgconfig(libdrm)
+BuildRequires: pkgconfig(libtasn1)
+BuildRequires: pkgconfig(libsoup-3.0)
+
 Requires: atk
 Requires: at-spi2-atk
 
@@ -94,17 +100,22 @@ files for developing applications that use %{name}
 # is only needed for x86_64.
 %global _dwz_max_die_limit_x86_64 250000000
 
-# This package fails to build with LTO due to undefined symbols.  LTO
-# was disabled in openSUSE as well, but with no real explanation why
-# beyond the undefined symbols.  It really shold be investigated further.
-# Disable LTO
-%define _lto_cflags %{nil}
+# Require 32 GB of RAM per vCPU for debuginfo processing. 16 GB is not enough.
+%global _find_debuginfo_opts %limit_build -m 32768
 
-# Decrease debuginfo even on ix86 because of:
+# Reduce debuginfo verbosity 32-bit builds to reduce memory consumption even more.
 # https://bugs.webkit.org/show_bug.cgi?id=140176
-%ifarch s390x %{arm} %{ix86} %{power64} %{mips}
-# Decrease debuginfo verbosity to reduce memory consumption even more
+# https://lists.fedoraproject.org/archives/list/devel@lists.fedoraproject.org/thread/I6IVNA52TXTBRQLKW45CJ5K4RA4WNGMI/
+%ifarch %{ix86} %{arm} aarch64
 %global optflags %(echo %{optflags} | sed 's/-g /-g1 /')
+%endif
+
+# JIT is broken on ARM systems with new ARMv8.5 BTI extension at the moment
+# Cf. https://bugzilla.redhat.com/show_bug.cgi?id=2130009
+# Cf. https://bugs.webkit.org/show_bug.cgi?id=245697
+# Disable BTI until this is fixed upstream.
+%ifarch aarch64
+%global optflags %(echo %{optflags} | sed 's/-mbranch-protection=standard /-mbranch-protection=pac-ret /')
 %endif
 
 %cmake \
@@ -113,7 +124,6 @@ files for developing applications that use %{name}
   -DPORT=WPE \
   -DCMAKE_BUILD_TYPE=Release \
   -DENABLE_MINIBROWSER=ON \
-  -DUSE_SOUP2=ON \
   -DENABLE_DOCUMENTATION=OFF \
   -DENABLE_INTROSPECTION=OFF \
   -GNinja
@@ -142,29 +152,30 @@ export NINJA_STATUS="[%f/%t][%e] "
 %add_to_license_files Source/WebInspectorUI/UserInterface/External/CSSDocumentation/LICENSE
 %add_to_license_files Source/ThirdParty/gtest/LICENSE
 %add_to_license_files Source/ThirdParty/ANGLE/src/libANGLE/renderer/vulkan/shaders/src/third_party/ffx_spd/LICENSE
+%add_to_license_files Source/ThirdParty/ANGLE/src/libANGLE/renderer/vulkan/shaders/src/third_party/etc_decoder/LICENSE
+%add_to_license_files Source/ThirdParty/ANGLE/src/libANGLE/overlay/LICENSE.txt
 %add_to_license_files Source/ThirdParty/ANGLE/src/third_party/ceval/LICENSE
 %add_to_license_files Source/ThirdParty/ANGLE/src/third_party/volk/LICENSE.md
 %add_to_license_files Source/ThirdParty/ANGLE/src/third_party/libXNVCtrl/LICENSE
-%add_to_license_files Source/ThirdParty/ANGLE/src/common/third_party/smhasher/LICENSE
 %add_to_license_files Source/ThirdParty/ANGLE/src/common/third_party/xxhash/LICENSE
 %add_to_license_files Source/ThirdParty/ANGLE/src/tests/test_utils/third_party/LICENSE
+%add_to_license_files Source/ThirdParty/ANGLE/util/windows/third_party/StackWalker/LICENSE
 %add_to_license_files Source/ThirdParty/ANGLE/LICENSE
-%add_to_license_files Source/ThirdParty/ANGLE/third_party/proguard/LICENSE
-%add_to_license_files Source/ThirdParty/ANGLE/third_party/turbine/LICENSE
-%add_to_license_files Source/ThirdParty/ANGLE/third_party/bazel/LICENSE
-%add_to_license_files Source/ThirdParty/ANGLE/third_party/colorama/LICENSE
-%add_to_license_files Source/ThirdParty/ANGLE/third_party/android_system_sdk/LICENSE
-%add_to_license_files Source/ThirdParty/ANGLE/third_party/r8/LICENSE
 %add_to_license_files Source/ThirdParty/ANGLE/tools/flex-bison/third_party/m4sugar/LICENSE
 %add_to_license_files Source/ThirdParty/ANGLE/tools/flex-bison/third_party/skeletons/LICENSE
-%add_to_license_files Source/ThirdParty/ANGLE/util/windows/third_party/StackWalker/LICENSE
+%add_to_license_files Source/ThirdParty/ANGLE/third_party/colorama/LICENSE
+%add_to_license_files Source/ThirdParty/ANGLE/third_party/r8/LICENSE
+%add_to_license_files Source/ThirdParty/ANGLE/third_party/android_system_sdk/LICENSE
+%add_to_license_files Source/ThirdParty/ANGLE/third_party/proguard/LICENSE
+%add_to_license_files Source/ThirdParty/ANGLE/third_party/flatbuffers/LICENSE
+%add_to_license_files Source/ThirdParty/ANGLE/third_party/turbine/LICENSE
+%add_to_license_files Source/ThirdParty/ANGLE/third_party/bazel/LICENSE
 
 %files
 %{_bindir}/WPEWebDriver
-%{_libdir}/libWPEWebKit-1.0.so.3
-%{_libdir}/libWPEWebKit-1.0.so.3.*
-%{_libexecdir}/wpe-webkit-1.0
-%{_libdir}/wpe-webkit-1.0
+%{_libdir}/libWPEWebKit-2.0.so.*
+%{_libexecdir}/wpe-webkit-2.0
+%{_libdir}/wpe-webkit-2.0
 %doc NEWS
 %license _license_files/*ThirdParty*
 %license _license_files/*WebCore*
@@ -173,12 +184,15 @@ export NINJA_STATUS="[%f/%t][%e] "
 %license _license_files/*JavaScriptCore*
 
 %files devel
-%{_includedir}/wpe-webkit-1.0
-%{_libdir}/libWPEWebKit-1.0.so
+%{_includedir}/wpe-webkit-2.0
+%{_libdir}/libWPEWebKit-2.0.so
 %{_libdir}/pkgconfig/*.pc
 
 
 %changelog
+* Sun Mar 19 2023 Philippe Normand <philn@igalia.com> - 2.40.0-1
+- New version
+
 * Wed Feb 15 2023 Philippe Normand <philn@igalia.com> - 2.38.5-1
 - New version
 
