@@ -6,7 +6,7 @@
 cp -p %1 _license_files/$(echo '%1' | sed -e 's!/!.!g')
 
 Name:           wpewebkit
-Version:        2.40.0
+Version:        2.40.1
 Release:        %autorelease
 Summary:        A WebKit port optimized for low-end devices
 
