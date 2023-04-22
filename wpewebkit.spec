@@ -126,6 +126,7 @@ files for developing applications that use %{name}
   -DENABLE_MINIBROWSER=ON \
   -DENABLE_DOCUMENTATION=OFF \
   -DENABLE_INTROSPECTION=OFF \
+  -DENABLE_UNIFIED_BUILDS=OFF \
   -GNinja
 
 
