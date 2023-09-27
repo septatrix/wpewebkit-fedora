@@ -32,6 +32,7 @@ BuildRequires: libatomic
 BuildRequires: libepoxy-devel
 BuildRequires: libicu-devel
 BuildRequires: libjpeg-devel
+BuildRequires: libjxl-devel
 BuildRequires: libpng-devel
 BuildRequires: libwebp-devel
 BuildRequires: libwpe-devel
