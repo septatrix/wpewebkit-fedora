@@ -73,6 +73,8 @@ BuildRequires: pkgconfig(libsoup-3.0)
 
 Requires: atk
 Requires: at-spi2-atk
+Requires: bubblewrap
+Requires: xdg-dbus-proxy
 
 %description
 WPE allows embedders to create simple and performant systems based on
