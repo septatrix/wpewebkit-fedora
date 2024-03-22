@@ -68,6 +68,7 @@ BuildRequires: libgcrypt-devel
 BuildRequires: libseccomp-devel
 BuildRequires: xdg-dbus-proxy
 BuildRequires: lcms2-devel
+BuildRequires: mold
 
 BuildRequires: pkgconfig(libavif)
 BuildRequires: pkgconfig(libdrm)
@@ -127,6 +128,7 @@ files for developing applications that use %{name}
 %cmake \
   -DCMAKE_C_COMPILER=clang \
   -DCMAKE_CXX_COMPILER=clang++ \
+  -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=mold \
   -DPORT=WPE \
   -DCMAKE_BUILD_TYPE=Release \
   -DENABLE_MINIBROWSER=ON \
