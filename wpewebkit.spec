@@ -14,6 +14,8 @@ License:        LGPLv2 and BSD
 URL:            https://www.%{name}.org/
 Source0:        https://wpewebkit.org/releases/%{name}-%{version}.tar.xz
 
+Patch0:         0001-WPE-GTK-Unreviewed-fix-build-for-Ubuntu-LTS-after-27.patch
+
 BuildRequires: atk-devel at-spi2-atk-devel
 BuildRequires: bison
 BuildRequires: cairo-devel
