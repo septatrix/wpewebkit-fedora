@@ -51,6 +51,7 @@ BuildRequires: perl(FindBin)
 BuildRequires: perl(JSON::PP)
 BuildRequires: perl(lib)
 BuildRequires: perl(Switch)
+BuildRequires: perl-bignum
 BuildRequires: python3
 BuildRequires: ruby
 BuildRequires: rubygem-json
