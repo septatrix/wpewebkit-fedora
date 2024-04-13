@@ -124,9 +124,6 @@ files for developing applications that use %{name}
 %endif
 
 %cmake \
-  -DCMAKE_C_COMPILER=clang \
-  -DCMAKE_CXX_COMPILER=clang++ \
-  -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=mold \
   -DPORT=WPE \
   -DCMAKE_BUILD_TYPE=Release \
   -DENABLE_MINIBROWSER=ON \
