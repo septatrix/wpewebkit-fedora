@@ -6,7 +6,7 @@
 cp -p %1 _license_files/$(echo '%1' | sed -e 's!/!.!g')
 
 Name:           wpewebkit
-Version:        2.44.1
+Version:        2.44.2
 Release:        %autorelease
 Summary:        A WebKit port optimized for low-end devices
 
@@ -17,7 +17,7 @@ Source1:        https://wpewebkit.org/releases/%{name}-%{version}.tar.xz.asc
 
 # Use the keys from https://webkitgtk.org/verifying.html
 # $ gpg --import aperez.key carlosgc.key
-# $ gpg --export --export-options export-minimal D7FCF61CF9A2DEAB31D81BD3F3D322D0EC4582C3 5AA3BC334FD7E3369E7C77B291C559DBE4C9123B > wpewebkit-keys.gpg
+# $ gpg --export --export-options export-minimal 5AA3BC334FD7E3369E7C77B291C559DBE4C9123B 013A0127AC9C65B34FFA62526C1009B693975393 > wpewebkit-keys.gpg
 Source2:        wpewebkit-keys.gpg
 
 BuildRequires: atk-devel at-spi2-atk-devel
