@@ -13,12 +13,6 @@ Summary:        A WebKit port optimized for low-end devices
 License:        LGPLv2 and BSD
 URL:            https://www.%{name}.org/
 Source0:        https://wpewebkit.org/releases/%{name}-%{version}.tar.xz
-Source1:        https://wpewebkit.org/releases/%{name}-%{version}.tar.xz.asc
-
-# Use the keys from https://webkitgtk.org/verifying.html
-# $ gpg --import aperez.key carlosgc.key
-# $ gpg --export --export-options export-minimal 5AA3BC334FD7E3369E7C77B291C559DBE4C9123B 013A0127AC9C65B34FFA62526C1009B693975393 > wpewebkit-keys.gpg
-Source2:        wpewebkit-keys.gpg
 
 BuildRequires: atk-devel at-spi2-atk-devel
 BuildRequires: bison
@@ -96,7 +90,6 @@ The %{name}-devel package contains libraries, build data, and header
 files for developing applications that use %{name}
 
 %prep
-%{gpgverify} --keyring='%{SOURCE2}' --signature='%{SOURCE1}' --data='%{SOURCE0}'
 %autosetup -p1 -n wpewebkit-%{version}
 
 %build
