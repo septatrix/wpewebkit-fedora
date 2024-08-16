@@ -14,6 +14,10 @@ License:        LGPLv2 and BSD
 URL:            https://www.%{name}.org/
 Source0:        https://wpewebkit.org/releases/%{name}-%{version}.tar.xz
 
+Patch0:         0001-Cherry-pick-282306-main-96fb0b0c6c46-.-https-bugs.we.patch
+Patch1:         0001-Fix-linker-error-in-JSC-testing-configuration.patch
+Patch2:         0001-Revert-Cherry-pick-272448.770-safari-7618-branch-6d3.patch
+
 BuildRequires: atk-devel at-spi2-atk-devel
 BuildRequires: bison
 BuildRequires: cairo-devel
