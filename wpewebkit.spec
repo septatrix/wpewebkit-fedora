@@ -20,8 +20,6 @@ BuildRequires: cairo-devel
 BuildRequires: cmake
 BuildRequires: egl-wayland-devel
 BuildRequires: flex
-BuildRequires: gcc
-BuildRequires: g++
 BuildRequires: gi-docgen
 BuildRequires: gperf
 BuildRequires: gstreamer1-devel
