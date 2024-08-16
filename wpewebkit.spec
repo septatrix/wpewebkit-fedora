@@ -44,7 +44,6 @@ BuildRequires: libxslt-devel
 BuildRequires: mesa-libEGL-devel
 BuildRequires: mesa-libgbm-devel
 BuildRequires: ninja-build
-BuildRequires: openjpeg2-devel
 BuildRequires: openssl-devel
 BuildRequires: perl(English)
 BuildRequires: perl(File::Copy::Recursive)
