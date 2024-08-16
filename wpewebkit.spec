@@ -20,6 +20,7 @@ BuildRequires: cairo-devel
 BuildRequires: cmake
 BuildRequires: egl-wayland-devel
 BuildRequires: flex
+BuildRequires: clang
 BuildRequires: gi-docgen
 BuildRequires: gperf
 BuildRequires: gstreamer1-devel
@@ -65,6 +66,7 @@ BuildRequires: libgcrypt-devel
 BuildRequires: libseccomp-devel
 BuildRequires: xdg-dbus-proxy
 BuildRequires: lcms2-devel
+BuildRequires: mold
 
 BuildRequires: pkgconfig(libavif)
 BuildRequires: pkgconfig(libdrm)
