@@ -132,6 +132,7 @@ files for developing applications that use %{name}
   -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=mold \
   -DPORT=WPE \
   -DCMAKE_BUILD_TYPE=Release \
+  -DENABLE_DEVELOPER_MODE=ON \
   -DENABLE_MINIBROWSER=ON \
   -DENABLE_DOCUMENTATION=OFF \
   -DENABLE_INTROSPECTION=OFF \
