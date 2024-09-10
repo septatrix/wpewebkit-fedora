@@ -133,6 +133,7 @@ files for developing applications that use %{name}
   -DPORT=WPE \
   -DCMAKE_BUILD_TYPE=Release \
   -DDEVELOPER_MODE=ON \
+  -DENABLE_WPE_QT_API=OFF \
   -DENABLE_MINIBROWSER=ON \
   -DENABLE_DOCUMENTATION=OFF \
   -DENABLE_INTROSPECTION=OFF \
