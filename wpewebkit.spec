@@ -122,9 +122,13 @@ files for developing applications that use %{name}
 %global optflags %(echo %{optflags} | sed 's/-mbranch-protection=standard /-mbranch-protection=pac-ret /')
 %endif
 
+# Clang is preferred: https://skia.org/docs/user/build/#supported-and-preferred-compilers
+# However, it crashes on ppc64le.
+%ifnarch ppc64le
+%global toolchain clang
+%endif
+
 %cmake \
-  -DCMAKE_C_COMPILER=clang \
-  -DCMAKE_CXX_COMPILER=clang++ \
   -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=mold \
   -DPORT=WPE \
   -DCMAKE_BUILD_TYPE=Release \
