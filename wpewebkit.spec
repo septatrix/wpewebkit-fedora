@@ -122,9 +122,8 @@ files for developing applications that use %{name}
 %global optflags %(echo %{optflags} | sed 's/-mbranch-protection=standard /-mbranch-protection=pac-ret /')
 %endif
 
-pwd
-ls -l
-mkdir Tools/flatpak
+mkdir Tools/{flatpak,TestRunnerShared,ImageDiff,WebKitTestRunner} PerformanceTests
+touch Tools/{flatpak,TestRunnerShared,ImageDiff,WebKitTestRunner}/CMakeLists.txt PerformanceTests/CMakeLists.txt
 %cmake \
   -DCMAKE_C_COMPILER=clang \
   -DCMAKE_CXX_COMPILER=clang++ \
