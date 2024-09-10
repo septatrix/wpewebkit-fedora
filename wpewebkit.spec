@@ -122,6 +122,9 @@ files for developing applications that use %{name}
 %global optflags %(echo %{optflags} | sed 's/-mbranch-protection=standard /-mbranch-protection=pac-ret /')
 %endif
 
+pwd
+ls -l
+mkdir WebKit/Tools/flatpak
 %cmake \
   -DCMAKE_C_COMPILER=clang \
   -DCMAKE_CXX_COMPILER=clang++ \
