@@ -1,0 +1,3603 @@
+From 71055d3626bcedfd16eac3c801e18c657ee9c2f8 Mon Sep 17 00:00:00 2001
+From: Carlos Garcia Campos <cgarcia@igalia.com>
+Date: Fri, 13 Sep 2024 14:47:57 +0200
+Subject: [PATCH] [GStreamer] Add support for DMA-BUF to GL video sink
+ https://bugs.webkit.org/show_bug.cgi?id=279672
+
+Reviewed by NOBODY (OOPS!).
+
+By adding DMA-BUF support to GL video sink, we can fallback to GL memory
+when gst can't provide DMA-BUF memory, instead of mapping the frame to
+upload it as a DMA-BUF buffer. With the new platform layer buffers we
+don't need specific TextureMapperPlatformLayerProxy for DMA-BUF, we can
+add support for YUV formats to CoordinatedPlatformLayerBufferDMABuf and
+use the existing GL proxy. This simplifies the code and we can remove a
+lot of code that is now unsued.
+
+* Source/WebCore/SourcesGTK.txt:
+* Source/WebCore/SourcesWPE.txt:
+* Source/WebCore/platform/SourcesGStreamer.txt:
+* Source/WebCore/platform/TextureMapper.cmake:
+* Source/WebCore/platform/graphics/PlatformDisplay.cpp:
+(WebCore::PlatformDisplay::dmabufFormatsForVideo):
+* Source/WebCore/platform/graphics/PlatformDisplay.h:
+* Source/WebCore/platform/graphics/egl/GLDisplay.cpp:
+(WebCore::queryDMABufFormats):
+(WebCore::GLDisplay::dmabufFormats):
+(WebCore::GLDisplay::dmabufFormatsForVideo):
+* Source/WebCore/platform/graphics/egl/GLDisplay.h:
+* Source/WebCore/platform/graphics/gbm/DMABufBuffer.h:
+* Source/WebCore/platform/graphics/gbm/DMABufColorSpace.h: Removed.
+* Source/WebCore/platform/graphics/gbm/DMABufEGLUtilities.h: Removed.
+* Source/WebCore/platform/graphics/gbm/DMABufFormat.h: Removed.
+* Source/WebCore/platform/graphics/gbm/DMABufObject.h: Removed.
+* Source/WebCore/platform/graphics/gbm/DMABufReleaseFlag.h: Removed.
+* Source/WebCore/platform/graphics/gbm/GBMBufferSwapchain.cpp: Removed.
+* Source/WebCore/platform/graphics/gbm/GBMBufferSwapchain.h: Removed.
+* Source/WebCore/platform/graphics/gstreamer/DMABufUtilities.cpp: Removed.
+* Source/WebCore/platform/graphics/gstreamer/DMABufUtilities.h: Removed.
+* Source/WebCore/platform/graphics/gstreamer/DMABufVideoSinkGStreamer.cpp: Removed.
+* Source/WebCore/platform/graphics/gstreamer/DMABufVideoSinkGStreamer.h: Removed.
+* Source/WebCore/platform/graphics/gstreamer/GLVideoSinkGStreamer.cpp:
+(initializeDMABufAvailability):
+(buildDMABufCaps):
+(webKitGLVideoSinkConstructed):
+(webKitGLVideoSinkProbePlatform):
+* Source/WebCore/platform/graphics/gstreamer/GStreamerCommon.cpp:
+(WebCore::registerWebKitGStreamerElements):
+* Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp:
+(WebCore::MediaPlayerPrivateGStreamer::MediaPlayerPrivateGStreamer):
+(WebCore::MediaPlayerPrivateGStreamer::triggerRepaint):
+(WebCore::MediaPlayerPrivateGStreamer::createVideoSink):
+(WebCore::MediaPlayerPrivateGStreamer::pushDMABufToCompositor): Deleted.
+(WebCore::MediaPlayerPrivateGStreamer::createVideoSinkDMABuf): Deleted.
+* Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h:
+* Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.cpp:
+(WebCore::VideoFrameGStreamer::createFromPixelBuffer):
+(WebCore::VideoFrameGStreamer::convert):
+* Source/WebCore/platform/graphics/texmap/TextureMapperPlatformLayerProxyDMABuf.cpp: Removed.
+* Source/WebCore/platform/graphics/texmap/TextureMapperPlatformLayerProxyDMABuf.h: Removed.
+* Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.cpp:
+(WebCore::importToTexture):
+(WebCore::formatIsYUV):
+(WebCore::yuvFormatPlaneInfo):
+(WebCore::CoordinatedPlatformLayerBufferDMABuf::importYUV const):
+(WebCore::CoordinatedPlatformLayerBufferDMABuf::importDMABuf const):
+* Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.h:
+* Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferVideo.cpp:
+(WebCore::CoordinatedPlatformLayerBufferVideo::create):
+(WebCore::CoordinatedPlatformLayerBufferVideo::CoordinatedPlatformLayerBufferVideo):
+(WebCore::CoordinatedPlatformLayerBufferVideo::createBufferIfNeeded):
+(WebCore::videoFormatToDRMFourcc):
+(WebCore::CoordinatedPlatformLayerBufferVideo::createBufferFromDMABufMemory):
+(WebCore::CoordinatedPlatformLayerBufferVideo::createBufferFromGLMemory):
+(WebCore::CoordinatedPlatformLayerBufferVideo::paintToTextureMapper):
+* Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferVideo.h:
+* Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferYUV.cpp:
+(WebCore::CoordinatedPlatformLayerBufferYUV::create):
+(WebCore::CoordinatedPlatformLayerBufferYUV::CoordinatedPlatformLayerBufferYUV):
+* Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferYUV.h:
+* Source/cmake/OptionsGTK.cmake:
+* Source/cmake/OptionsWPE.cmake:
+---
+ Source/WebCore/SourcesGTK.txt                 |   1 -
+ Source/WebCore/SourcesWPE.txt                 |   1 -
+ Source/WebCore/platform/SourcesGStreamer.txt  |   2 -
+ Source/WebCore/platform/TextureMapper.cmake   |  16 -
+ .../platform/graphics/PlatformDisplay.cpp     |   7 +
+ .../platform/graphics/PlatformDisplay.h       |   3 +
+ .../platform/graphics/egl/GLDisplay.cpp       |  97 +++--
+ .../WebCore/platform/graphics/egl/GLDisplay.h |   6 +
+ .../platform/graphics/gbm/DMABufBuffer.h      |   6 +
+ .../platform/graphics/gbm/DMABufColorSpace.h  |  42 --
+ .../graphics/gbm/DMABufEGLUtilities.h         |  70 ---
+ .../platform/graphics/gbm/DMABufFormat.h      | 397 ------------------
+ .../platform/graphics/gbm/DMABufObject.h      |  87 ----
+ .../platform/graphics/gbm/DMABufReleaseFlag.h |  94 -----
+ .../graphics/gbm/GBMBufferSwapchain.cpp       | 207 ---------
+ .../graphics/gbm/GBMBufferSwapchain.h         | 138 ------
+ .../graphics/gstreamer/DMABufUtilities.cpp    |  76 ----
+ .../graphics/gstreamer/DMABufUtilities.h      | 110 -----
+ .../gstreamer/DMABufVideoSinkGStreamer.cpp    | 211 ----------
+ .../gstreamer/DMABufVideoSinkGStreamer.h      |  59 ---
+ .../gstreamer/GLVideoSinkGStreamer.cpp        | 103 ++++-
+ .../graphics/gstreamer/GStreamerCommon.cpp    |   2 -
+ .../gstreamer/MediaPlayerPrivateGStreamer.cpp | 234 +----------
+ .../gstreamer/MediaPlayerPrivateGStreamer.h   |  17 -
+ .../gstreamer/VideoFrameGStreamer.cpp         |   4 +-
+ .../TextureMapperPlatformLayerProxyDMABuf.cpp | 342 ---------------
+ .../TextureMapperPlatformLayerProxyDMABuf.h   | 124 ------
+ .../CoordinatedPlatformLayerBufferDMABuf.cpp  | 202 +++++++--
+ .../CoordinatedPlatformLayerBufferDMABuf.h    |   2 +
+ .../CoordinatedPlatformLayerBufferVideo.cpp   | 193 +++++++--
+ .../CoordinatedPlatformLayerBufferVideo.h     |   7 +-
+ .../CoordinatedPlatformLayerBufferYUV.cpp     |  23 +-
+ .../CoordinatedPlatformLayerBufferYUV.h       |   5 +
+ Source/cmake/OptionsGTK.cmake                 |   1 -
+ Source/cmake/OptionsWPE.cmake                 |   1 -
+ 35 files changed, 546 insertions(+), 2344 deletions(-)
+ delete mode 100644 Source/WebCore/platform/graphics/gbm/DMABufColorSpace.h
+ delete mode 100644 Source/WebCore/platform/graphics/gbm/DMABufEGLUtilities.h
+ delete mode 100644 Source/WebCore/platform/graphics/gbm/DMABufFormat.h
+ delete mode 100644 Source/WebCore/platform/graphics/gbm/DMABufObject.h
+ delete mode 100644 Source/WebCore/platform/graphics/gbm/DMABufReleaseFlag.h
+ delete mode 100644 Source/WebCore/platform/graphics/gbm/GBMBufferSwapchain.cpp
+ delete mode 100644 Source/WebCore/platform/graphics/gbm/GBMBufferSwapchain.h
+ delete mode 100644 Source/WebCore/platform/graphics/gstreamer/DMABufUtilities.cpp
+ delete mode 100644 Source/WebCore/platform/graphics/gstreamer/DMABufUtilities.h
+ delete mode 100644 Source/WebCore/platform/graphics/gstreamer/DMABufVideoSinkGStreamer.cpp
+ delete mode 100644 Source/WebCore/platform/graphics/gstreamer/DMABufVideoSinkGStreamer.h
+ delete mode 100644 Source/WebCore/platform/graphics/texmap/TextureMapperPlatformLayerProxyDMABuf.cpp
+ delete mode 100644 Source/WebCore/platform/graphics/texmap/TextureMapperPlatformLayerProxyDMABuf.h
+
+diff --git a/Source/WebCore/SourcesGTK.txt b/Source/WebCore/SourcesGTK.txt
+index 6e8e736d5e8b4..cafba5ad19fcc 100644
+--- a/Source/WebCore/SourcesGTK.txt
++++ b/Source/WebCore/SourcesGTK.txt
+@@ -72,7 +72,6 @@ platform/graphics/egl/PlatformDisplaySurfaceless.cpp @no-unify
+ platform/graphics/gbm/DMABufBuffer.cpp
+ platform/graphics/gbm/DRMDeviceManager.cpp
+ platform/graphics/gbm/DRMDeviceNode.cpp
+-platform/graphics/gbm/GBMBufferSwapchain.cpp
+ platform/graphics/gbm/GraphicsContextGLTextureMapperGBM.cpp @no-unify
+ platform/graphics/gbm/GraphicsLayerContentsDisplayDelegateGBM.cpp @no-unify
+ platform/graphics/gbm/PlatformDisplayGBM.cpp @no-unify
+diff --git a/Source/WebCore/SourcesWPE.txt b/Source/WebCore/SourcesWPE.txt
+index d918e6bfa9fb9..3c68a8ed10cd2 100644
+--- a/Source/WebCore/SourcesWPE.txt
++++ b/Source/WebCore/SourcesWPE.txt
+@@ -72,7 +72,6 @@ platform/graphics/egl/PlatformDisplaySurfaceless.cpp @no-unify
+ platform/graphics/gbm/DMABufBuffer.cpp
+ platform/graphics/gbm/DRMDeviceManager.cpp
+ platform/graphics/gbm/DRMDeviceNode.cpp
+-platform/graphics/gbm/GBMBufferSwapchain.cpp
+ platform/graphics/gbm/GraphicsContextGLTextureMapperGBM.cpp @no-unify
+ platform/graphics/gbm/GraphicsLayerContentsDisplayDelegateGBM.cpp @no-unify
+ platform/graphics/gbm/PlatformDisplayGBM.cpp @no-unify
+diff --git a/Source/WebCore/platform/SourcesGStreamer.txt b/Source/WebCore/platform/SourcesGStreamer.txt
+index 8b38d69e4fecc..b57aee65c0f7e 100644
+--- a/Source/WebCore/platform/SourcesGStreamer.txt
++++ b/Source/WebCore/platform/SourcesGStreamer.txt
+@@ -49,8 +49,6 @@ platform/audio/gstreamer/PlatformRawAudioDataGStreamer.cpp
+ platform/audio/gstreamer/WebKitWebAudioSourceGStreamer.cpp @no-unify
+ 
+ platform/graphics/gstreamer/AudioTrackPrivateGStreamer.cpp
+-platform/graphics/gstreamer/DMABufUtilities.cpp
+-platform/graphics/gstreamer/DMABufVideoSinkGStreamer.cpp @no-unify
+ platform/graphics/gstreamer/GLVideoSinkGStreamer.cpp @no-unify
+ platform/graphics/gstreamer/GRefPtrGStreamer.cpp
+ platform/graphics/gstreamer/GStreamerAudioMixer.cpp
+diff --git a/Source/WebCore/platform/TextureMapper.cmake b/Source/WebCore/platform/TextureMapper.cmake
+index 17c464efb97d6..660be5e32469b 100644
+--- a/Source/WebCore/platform/TextureMapper.cmake
++++ b/Source/WebCore/platform/TextureMapper.cmake
+@@ -38,16 +38,6 @@ list(APPEND WebCore_PRIVATE_FRAMEWORK_HEADERS
+     platform/graphics/texmap/TextureMapperTiledBackingStore.h
+ )
+ 
+-if (USE_TEXTURE_MAPPER_DMABUF)
+-    list(APPEND WebCore_SOURCES
+-        platform/graphics/texmap/TextureMapperPlatformLayerProxyDMABuf.cpp
+-    )
+-
+-    list(APPEND WebCore_PRIVATE_FRAMEWORK_HEADERS
+-        platform/graphics/texmap/TextureMapperPlatformLayerProxyDMABuf.h
+-    )
+-endif ()
+-
+ if (USE_COORDINATED_GRAPHICS)
+     list(APPEND WebCore_PRIVATE_INCLUDE_DIRECTORIES
+         "${WEBCORE_DIR}/platform/graphics/texmap/coordinated"
+@@ -182,14 +172,8 @@ endif ()
+ if (USE_GBM)
+     list(APPEND WebCore_PRIVATE_FRAMEWORK_HEADERS
+         platform/graphics/gbm/DMABufBuffer.h
+-        platform/graphics/gbm/DMABufColorSpace.h
+-        platform/graphics/gbm/DMABufEGLUtilities.h
+-        platform/graphics/gbm/DMABufFormat.h
+-        platform/graphics/gbm/DMABufObject.h
+-        platform/graphics/gbm/DMABufReleaseFlag.h
+         platform/graphics/gbm/DRMDeviceManager.h
+         platform/graphics/gbm/DRMDeviceNode.h
+-        platform/graphics/gbm/GBMBufferSwapchain.h
+         platform/graphics/gbm/GraphicsContextGLTextureMapperGBM.h
+         platform/graphics/gbm/GraphicsLayerContentsDisplayDelegateGBM.h
+     )
+diff --git a/Source/WebCore/platform/graphics/PlatformDisplay.cpp b/Source/WebCore/platform/graphics/PlatformDisplay.cpp
+index 60bc662801c17..5dffb2c318823 100644
+--- a/Source/WebCore/platform/graphics/PlatformDisplay.cpp
++++ b/Source/WebCore/platform/graphics/PlatformDisplay.cpp
+@@ -180,6 +180,13 @@ const Vector<GLDisplay::DMABufFormat>& PlatformDisplay::dmabufFormats()
+ {
+     return m_eglDisplay->dmabufFormats();
+ }
++
++#if USE(GSTREAMER)
++const Vector<GLDisplay::DMABufFormat>& PlatformDisplay::dmabufFormatsForVideo()
++{
++    return m_eglDisplay->dmabufFormatsForVideo();
++}
++#endif
+ #endif // USE(GBM)
+ 
+ } // namespace WebCore
+diff --git a/Source/WebCore/platform/graphics/PlatformDisplay.h b/Source/WebCore/platform/graphics/PlatformDisplay.h
+index e83062d5ad537..48e7d7a735a0e 100644
+--- a/Source/WebCore/platform/graphics/PlatformDisplay.h
++++ b/Source/WebCore/platform/graphics/PlatformDisplay.h
+@@ -97,6 +97,9 @@ class PlatformDisplay {
+     bool destroyEGLImage(EGLImage) const;
+ #if USE(GBM)
+     const Vector<GLDisplay::DMABufFormat>& dmabufFormats();
++#if USE(GSTREAMER)
++    const Vector<GLDisplay::DMABufFormat>& dmabufFormatsForVideo();
++#endif
+ #endif
+ 
+ #if ENABLE(WEBGL)
+diff --git a/Source/WebCore/platform/graphics/egl/GLDisplay.cpp b/Source/WebCore/platform/graphics/egl/GLDisplay.cpp
+index d4b90170ed184..8ec29c85f1519 100644
+--- a/Source/WebCore/platform/graphics/egl/GLDisplay.cpp
++++ b/Source/WebCore/platform/graphics/egl/GLDisplay.cpp
+@@ -145,6 +145,43 @@ bool GLDisplay::destroyImage(EGLImage image) const
+ }
+ 
+ #if USE(GBM)
++static Vector<GLDisplay::DMABufFormat> queryDMABufFormats(EGLDisplay eglDisplay, const Vector<EGLint>& supportedFormats, bool supportModifiers)
++{
++    static PFNEGLQUERYDMABUFFORMATSEXTPROC s_eglQueryDmaBufFormatsEXT = reinterpret_cast<PFNEGLQUERYDMABUFFORMATSEXTPROC>(eglGetProcAddress("eglQueryDmaBufFormatsEXT"));
++    if (!s_eglQueryDmaBufFormatsEXT)
++        return { };
++
++    EGLint formatsCount;
++    if (!s_eglQueryDmaBufFormatsEXT(eglDisplay, 0, nullptr, &formatsCount) || !formatsCount)
++        return { };
++
++    Vector<EGLint> formats(formatsCount);
++    if (!s_eglQueryDmaBufFormatsEXT(eglDisplay, formatsCount, reinterpret_cast<EGLint*>(formats.data()), &formatsCount))
++        return { };
++
++    static PFNEGLQUERYDMABUFMODIFIERSEXTPROC s_eglQueryDmaBufModifiersEXT = supportModifiers ?
++        reinterpret_cast<PFNEGLQUERYDMABUFMODIFIERSEXTPROC>(eglGetProcAddress("eglQueryDmaBufModifiersEXT")) : nullptr;
++
++    return WTF::compactMap(supportedFormats, [&](auto format) -> std::optional<GLDisplay::DMABufFormat> {
++        if (!formats.contains(format))
++            return std::nullopt;
++
++        Vector<uint64_t, 1> dmabufModifiers = { DRM_FORMAT_MOD_INVALID };
++        if (s_eglQueryDmaBufModifiersEXT) {
++            EGLint modifiersCount;
++            if (s_eglQueryDmaBufModifiersEXT(eglDisplay, format, 0, nullptr, nullptr, &modifiersCount) && modifiersCount) {
++                Vector<EGLuint64KHR> modifiers(modifiersCount);
++                if (s_eglQueryDmaBufModifiersEXT(eglDisplay, format, modifiersCount, reinterpret_cast<EGLuint64KHR*>(modifiers.data()), nullptr, &modifiersCount)) {
++                    dmabufModifiers.grow(modifiersCount);
++                    for (int i = 0; i < modifiersCount; ++i)
++                        dmabufModifiers[i] = modifiers[i];
++                }
++            }
++        }
++        return GLDisplay::DMABufFormat { static_cast<uint32_t>(format), WTFMove(dmabufModifiers) };
++    });
++}
++
+ const Vector<GLDisplay::DMABufFormat>& GLDisplay::dmabufFormats()
+ {
+     static std::once_flag onceFlag;
+@@ -155,21 +192,6 @@ const Vector<GLDisplay::DMABufFormat>& GLDisplay::dmabufFormats()
+         if (!m_extensions.EXT_image_dma_buf_import)
+             return;
+ 
+-        static PFNEGLQUERYDMABUFFORMATSEXTPROC s_eglQueryDmaBufFormatsEXT = reinterpret_cast<PFNEGLQUERYDMABUFFORMATSEXTPROC>(eglGetProcAddress("eglQueryDmaBufFormatsEXT"));
+-        if (!s_eglQueryDmaBufFormatsEXT)
+-            return;
+-
+-        EGLint formatsCount;
+-        if (!s_eglQueryDmaBufFormatsEXT(m_display, 0, nullptr, &formatsCount) || !formatsCount)
+-            return;
+-
+-        Vector<EGLint> formats(formatsCount);
+-        if (!s_eglQueryDmaBufFormatsEXT(m_display, formatsCount, reinterpret_cast<EGLint*>(formats.data()), &formatsCount))
+-            return;
+-
+-        static PFNEGLQUERYDMABUFMODIFIERSEXTPROC s_eglQueryDmaBufModifiersEXT = m_extensions.EXT_image_dma_buf_import_modifiers ?
+-            reinterpret_cast<PFNEGLQUERYDMABUFMODIFIERSEXTPROC>(eglGetProcAddress("eglQueryDmaBufModifiersEXT")) : nullptr;
+-
+         // For now we only support formats that can be created with a single GBM buffer for all planes.
+         static const Vector<EGLint> s_supportedFormats = {
+             DRM_FORMAT_XRGB8888, DRM_FORMAT_RGBX8888, DRM_FORMAT_XBGR8888, DRM_FORMAT_BGRX8888,
+@@ -178,28 +200,35 @@ const Vector<GLDisplay::DMABufFormat>& GLDisplay::dmabufFormats()
+             DRM_FORMAT_XRGB2101010, DRM_FORMAT_XBGR2101010, DRM_FORMAT_ARGB2101010, DRM_FORMAT_ABGR2101010,
+             DRM_FORMAT_XRGB16161616F, DRM_FORMAT_XBGR16161616F, DRM_FORMAT_ARGB16161616F, DRM_FORMAT_ABGR16161616F
+         };
+-
+-        m_dmabufFormats = WTF::compactMap(s_supportedFormats, [&](auto format) -> std::optional<DMABufFormat> {
+-            if (!formats.contains(format))
+-                return std::nullopt;
+-
+-            Vector<uint64_t, 1> dmabufModifiers = { DRM_FORMAT_MOD_INVALID };
+-            if (s_eglQueryDmaBufModifiersEXT) {
+-                EGLint modifiersCount;
+-                if (s_eglQueryDmaBufModifiersEXT(m_display, format, 0, nullptr, nullptr, &modifiersCount) && modifiersCount) {
+-                    Vector<EGLuint64KHR> modifiers(modifiersCount);
+-                    if (s_eglQueryDmaBufModifiersEXT(m_display, format, modifiersCount, reinterpret_cast<EGLuint64KHR*>(modifiers.data()), nullptr, &modifiersCount)) {
+-                        dmabufModifiers.grow(modifiersCount);
+-                        for (int i = 0; i < modifiersCount; ++i)
+-                            dmabufModifiers[i] = modifiers[i];
+-                    }
+-                }
+-            }
+-            return DMABufFormat { static_cast<uint32_t>(format), WTFMove(dmabufModifiers) };
+-        });
++        m_dmabufFormats = queryDMABufFormats(m_display, s_supportedFormats, m_extensions.EXT_image_dma_buf_import_modifiers);
+     });
+     return m_dmabufFormats;
+ }
++
++#if USE(GSTREAMER)
++const Vector<GLDisplay::DMABufFormat>& GLDisplay::dmabufFormatsForVideo()
++{
++    static std::once_flag onceFlag;
++    std::call_once(onceFlag, [this] {
++        if (m_display == EGL_NO_DISPLAY)
++            return;
++
++        if (!m_extensions.EXT_image_dma_buf_import)
++            return;
++
++        // Formats supported by the texture mapper.
++        // FIXME: add support for YUY2, YVYU, UYVY, VYUY, AYUV.
++        static const Vector<EGLint> s_supportedFormats = {
++            DRM_FORMAT_XRGB8888, DRM_FORMAT_XBGR8888, DRM_FORMAT_ARGB8888, DRM_FORMAT_ABGR8888,
++            DRM_FORMAT_YUV420, DRM_FORMAT_YVU420, DRM_FORMAT_NV12, DRM_FORMAT_NV21,
++            DRM_FORMAT_YUV444, DRM_FORMAT_YUV411, DRM_FORMAT_YUV422, DRM_FORMAT_P010
++        };
++
++        m_dmabufFormatsForVideo = queryDMABufFormats(m_display, s_supportedFormats, m_extensions.EXT_image_dma_buf_import_modifiers);
++    });
++    return m_dmabufFormatsForVideo;
++}
++#endif
+ #endif // USE(GBM)
+ 
+ } // namespace WebCore
+diff --git a/Source/WebCore/platform/graphics/egl/GLDisplay.h b/Source/WebCore/platform/graphics/egl/GLDisplay.h
+index f58a4dbbee383..3f3ddd1ac36f2 100644
+--- a/Source/WebCore/platform/graphics/egl/GLDisplay.h
++++ b/Source/WebCore/platform/graphics/egl/GLDisplay.h
+@@ -68,6 +68,9 @@ class GLDisplay {
+         Vector<uint64_t, 1> modifiers;
+     };
+     const Vector<DMABufFormat>& dmabufFormats();
++#if USE(GSTREAMER)
++    const Vector<DMABufFormat>& dmabufFormatsForVideo();
++#endif
+ #endif
+ 
+ private:
+@@ -80,6 +83,9 @@ class GLDisplay {
+ 
+ #if USE(GBM)
+     Vector<DMABufFormat> m_dmabufFormats;
++#if USE(GSTREAMER)
++    Vector<DMABufFormat> m_dmabufFormatsForVideo;
++#endif
+ #endif
+ };
+ 
+diff --git a/Source/WebCore/platform/graphics/gbm/DMABufBuffer.h b/Source/WebCore/platform/graphics/gbm/DMABufBuffer.h
+index d212c6e275b86..022864e211c92 100644
+--- a/Source/WebCore/platform/graphics/gbm/DMABufBuffer.h
++++ b/Source/WebCore/platform/graphics/gbm/DMABufBuffer.h
+@@ -27,6 +27,7 @@
+ 
+ #if USE(COORDINATED_GRAPHICS) && USE(GBM)
+ #include "IntSize.h"
++#include <optional>
+ #include <wtf/ThreadSafeRefCounted.h>
+ #include <wtf/Vector.h>
+ #include <wtf/unix/UnixFileDescriptor.h>
+@@ -62,6 +63,10 @@ class DMABufBuffer final : public ThreadSafeRefCounted<DMABufBuffer> {
+     const Attributes& attributes() const { return m_attributes; }
+     std::optional<Attributes> takeAttributes();
+ 
++    enum class ColorSpace : uint8_t { BT601, BT709, BT2020, SMPTE240M };
++    std::optional<ColorSpace> colorSpace() const { return m_colorSpace; }
++    void setColorSpace(ColorSpace colorSpace) { m_colorSpace = colorSpace; }
++
+     CoordinatedPlatformLayerBuffer* buffer() const { return m_buffer.get(); }
+     void setBuffer(std::unique_ptr<CoordinatedPlatformLayerBuffer>&&);
+ 
+@@ -71,6 +76,7 @@ class DMABufBuffer final : public ThreadSafeRefCounted<DMABufBuffer> {
+ 
+     uint64_t m_id { 0 };
+     Attributes m_attributes;
++    std::optional<ColorSpace> m_colorSpace;
+     std::unique_ptr<CoordinatedPlatformLayerBuffer> m_buffer;
+ };
+ 
+diff --git a/Source/WebCore/platform/graphics/gbm/DMABufColorSpace.h b/Source/WebCore/platform/graphics/gbm/DMABufColorSpace.h
+deleted file mode 100644
+index d8211605db499..0000000000000
+--- a/Source/WebCore/platform/graphics/gbm/DMABufColorSpace.h
++++ /dev/null
+@@ -1,42 +0,0 @@
+-/*
+- * Copyright (C) 2022 Metrological Group B.V.
+- * Copyright (C) 2022 Igalia S.L.
+- *
+- * Redistribution and use in source and binary forms, with or without
+- * modification, are permitted provided that the following conditions
+- * are met:
+- * 1. Redistributions of source code must retain the above copyright
+- *    notice, this list of conditions and the following disclaimer.
+- * 2. Redistributions in binary form must reproduce the above copyright
+- *    notice, this list of conditions and the following disclaimer in the
+- *    documentation and/or other materials provided with the distribution.
+- *
+- * THIS SOFTWARE IS PROVIDED BY APPLE INC. AND ITS CONTRIBUTORS ``AS IS''
+- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+- * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+- * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL APPLE INC. OR ITS CONTRIBUTORS
+- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+- * THE POSSIBILITY OF SUCH DAMAGE.
+- */
+-
+-#pragma once
+-
+-#include <cstdint>
+-
+-namespace WebCore {
+-
+-enum class DMABufColorSpace : uint32_t {
+-    Invalid,
+-    SRGB,
+-    BT601,
+-    BT709,
+-    BT2020,
+-    SMPTE240M,
+-};
+-
+-} // namespace WebCore
+diff --git a/Source/WebCore/platform/graphics/gbm/DMABufEGLUtilities.h b/Source/WebCore/platform/graphics/gbm/DMABufEGLUtilities.h
+deleted file mode 100644
+index e1f3bb03e0bc4..0000000000000
+--- a/Source/WebCore/platform/graphics/gbm/DMABufEGLUtilities.h
++++ /dev/null
+@@ -1,70 +0,0 @@
+-/*
+- * Copyright (C) 2022 Metrological Group B.V.
+- * Copyright (C) 2022 Igalia S.L.
+- *
+- * Redistribution and use in source and binary forms, with or without
+- * modification, are permitted provided that the following conditions
+- * are met:
+- * 1. Redistributions of source code must retain the above copyright
+- *    notice, this list of conditions and the following disclaimer.
+- * 2. Redistributions in binary form must reproduce the above copyright
+- *    notice, this list of conditions and the following disclaimer in the
+- *    documentation and/or other materials provided with the distribution.
+- *
+- * THIS SOFTWARE IS PROVIDED BY APPLE INC. AND ITS CONTRIBUTORS ``AS IS''
+- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+- * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+- * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL APPLE INC. OR ITS CONTRIBUTORS
+- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+- * THE POSSIBILITY OF SUCH DAMAGE.
+- */
+-
+-#pragma once
+-
+-#include "DMABufObject.h"
+-#include <span>
+-#include <wtf/Vector.h>
+-
+-// This is a utilities header that provides helpers for integration of DMABuf operations with EGL.
+-// No EGL headers are included here to keep the helpers usable across different EGL implementations,
+-// so the expectation is that this header is included in the place-of-use implementation file after
+-// the appropriate EGL headers have already been included.
+-
+-namespace WebCore::DMABufEGLUtilities {
+-
+-enum class PlaneModifiersUsage : bool {
+-    Use = true,
+-    DoNotUse = false,
+-};
+-
+-static inline Vector<EGLAttrib> constructEGLCreateImageAttributes(const DMABufObject& object, unsigned planeIndex, PlaneModifiersUsage planeModifiersUsage)
+-{
+-    Vector<EGLAttrib> attributes;
+-    attributes.reserveInitialCapacity(12 + 4 + 1);
+-
+-    attributes.append(std::span<const EGLAttrib>({
+-        EGL_WIDTH, EGLint(object.format.planeWidth(planeIndex, object.width)),
+-        EGL_HEIGHT, EGLint(object.format.planeHeight(planeIndex, object.height)),
+-        EGL_LINUX_DRM_FOURCC_EXT, EGLint(object.format.planes[planeIndex].fourcc),
+-        EGL_DMA_BUF_PLANE0_FD_EXT, object.fd[planeIndex].value(),
+-        EGL_DMA_BUF_PLANE0_OFFSET_EXT, EGLint(object.offset[planeIndex]),
+-        EGL_DMA_BUF_PLANE0_PITCH_EXT, EGLint(object.stride[planeIndex]),
+-    }));
+-
+-    if (planeModifiersUsage == PlaneModifiersUsage::Use && object.modifierPresent[planeIndex]) {
+-        attributes.append(std::span<const EGLAttrib>({
+-            EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, EGLint(object.modifierValue[planeIndex] >> 32),
+-            EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, EGLint(object.modifierValue[planeIndex] & 0xffffffff),
+-        }));
+-    }
+-
+-    attributes.append(EGL_NONE);
+-    return attributes;
+-}
+-
+-} // namespace WebCore::DMABufEGLUtilities
+diff --git a/Source/WebCore/platform/graphics/gbm/DMABufFormat.h b/Source/WebCore/platform/graphics/gbm/DMABufFormat.h
+deleted file mode 100644
+index e89331c1381cf..0000000000000
+--- a/Source/WebCore/platform/graphics/gbm/DMABufFormat.h
++++ /dev/null
+@@ -1,397 +0,0 @@
+-/*
+- * Copyright (C) 2022 Metrological Group B.V.
+- * Copyright (C) 2022-2024 Igalia S.L.
+- *
+- * Redistribution and use in source and binary forms, with or without
+- * modification, are permitted provided that the following conditions
+- * are met:
+- * 1. Redistributions of source code must retain the above copyright
+- *    notice, this list of conditions and the following disclaimer.
+- * 2. Redistributions in binary form must reproduce the above copyright
+- *    notice, this list of conditions and the following disclaimer in the
+- *    documentation and/or other materials provided with the distribution.
+- *
+- * THIS SOFTWARE IS PROVIDED BY APPLE INC. AND ITS CONTRIBUTORS ``AS IS''
+- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+- * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+- * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL APPLE INC. OR ITS CONTRIBUTORS
+- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+- * THE POSSIBILITY OF SUCH DAMAGE.
+- */
+-
+-#pragma once
+-
+-#include <array>
+-#include <cstddef>
+-#include <cstdint>
+-
+-namespace IPC {
+-template<typename T, typename U> struct ArgumentCoder;
+-}
+-
+-namespace WebCore {
+-
+-namespace DMABufFormatImpl {
+-
+-static constexpr uint32_t createFourCC(char a, char b, char c, char d)
+-{
+-    return uint32_t(a) | (uint32_t(b) << 8) | (uint32_t(c) << 16) | (uint32_t(d) << 24);
+-}
+-
+-}
+-
+-struct DMABufFormat {
+-    enum class FourCC : uint32_t {
+-        Invalid = 0,
+-
+-        R8 = DMABufFormatImpl::createFourCC('R', '8', ' ', ' '),
+-        GR88 = DMABufFormatImpl::createFourCC('G', 'R', '8', '8'),
+-        R16 = DMABufFormatImpl::createFourCC('R', '1', '6', ' '),
+-        GR32 = DMABufFormatImpl::createFourCC('G', 'R', '3', '2'),
+-
+-        XRGB8888 = DMABufFormatImpl::createFourCC('X', 'R', '2', '4'),
+-        XBGR8888 = DMABufFormatImpl::createFourCC('X', 'B', '2', '4'),
+-        RGBX8888 = DMABufFormatImpl::createFourCC('R', 'X', '2', '4'),
+-        BGRX8888 = DMABufFormatImpl::createFourCC('B', 'X', '2', '4'),
+-        ARGB8888 = DMABufFormatImpl::createFourCC('A', 'R', '2', '4'),
+-        ABGR8888 = DMABufFormatImpl::createFourCC('A', 'B', '2', '4'),
+-        RGBA8888 = DMABufFormatImpl::createFourCC('R', 'A', '2', '4'),
+-        BGRA8888 = DMABufFormatImpl::createFourCC('B', 'A', '2', '4'),
+-        RGB888 = DMABufFormatImpl::createFourCC('R', 'G', '2', '4'),
+-        BGR888 = DMABufFormatImpl::createFourCC('B', 'G', '2', '4'),
+-
+-        I420 = DMABufFormatImpl::createFourCC('I', '4', '2', '0'),
+-        YV12 = DMABufFormatImpl::createFourCC('Y', 'V', '1', '2'),
+-        A420 = DMABufFormatImpl::createFourCC('A', '4', '2', '0'),
+-        NV12 = DMABufFormatImpl::createFourCC('N', 'V', '1', '2'),
+-        NV21 = DMABufFormatImpl::createFourCC('N', 'V', '2', '1'),
+-
+-        YUY2 = DMABufFormatImpl::createFourCC('Y', 'U', 'Y', '2'),
+-        YVYU = DMABufFormatImpl::createFourCC('Y', 'V', 'Y', 'U'),
+-        UYVY = DMABufFormatImpl::createFourCC('U', 'Y', 'V', 'Y'),
+-        VYUY = DMABufFormatImpl::createFourCC('V', 'Y', 'U', 'Y'),
+-        VUYA = DMABufFormatImpl::createFourCC('V', 'U', 'Y', 'A'),
+-        AYUV = DMABufFormatImpl::createFourCC('A', 'Y', 'U', 'V'),
+-
+-        Y444 = DMABufFormatImpl::createFourCC('Y', '4', '4', '4'),
+-        Y41B = DMABufFormatImpl::createFourCC('Y', '4', '1', 'B'),
+-        Y42B = DMABufFormatImpl::createFourCC('Y', '4', '2', 'B'),
+-
+-        P010 = DMABufFormatImpl::createFourCC('P', '0', '1', '0'),
+-        P016 = DMABufFormatImpl::createFourCC('P', '0', '1', '6'),
+-    };
+-
+-    enum class Modifier : uint64_t {
+-        Invalid = ((1ULL << 56) - 1),
+-    };
+-
+-    static constexpr unsigned c_maxPlanes = 4;
+-
+-    template<FourCC> static DMABufFormat create() = delete;
+-    static DMABufFormat create(uint32_t);
+-
+-    template<FourCC fourccValue, typename... PlaneDefinitionTypes>
+-    static DMABufFormat instantiate();
+-
+-    FourCC fourcc { FourCC::Invalid };
+-    unsigned numPlanes { 0 };
+-
+-    uint32_t planeWidth(unsigned planeIndex, uint32_t width) const
+-    {
+-        ASSERT(planeIndex < c_maxPlanes);
+-        return (width >> planes[planeIndex].horizontalSubsampling);
+-    }
+-
+-    uint32_t planeHeight(unsigned planeIndex, uint32_t height) const
+-    {
+-        ASSERT(planeIndex < c_maxPlanes);
+-        return (height >> planes[planeIndex].verticalSubsampling);
+-    }
+-
+-    template<FourCC fourccValue, unsigned hsValue, unsigned vsValue>
+-    struct PlaneDefinition {
+-        static constexpr FourCC fourcc = fourccValue;
+-        static constexpr unsigned horizontalSubsampling = hsValue;
+-        static constexpr unsigned verticalSubsampling = vsValue;
+-    };
+-
+-    struct Plane {
+-        Plane() = default;
+-
+-        template<typename PlaneDefinitionType>
+-        Plane(const PlaneDefinitionType&)
+-            : fourcc(PlaneDefinitionType::fourcc)
+-            , horizontalSubsampling(PlaneDefinitionType::horizontalSubsampling)
+-            , verticalSubsampling(PlaneDefinitionType::verticalSubsampling)
+-        { }
+-
+-        FourCC fourcc { FourCC::Invalid };
+-        unsigned horizontalSubsampling { 0 };
+-        unsigned verticalSubsampling { 0 };
+-
+-    private:
+-        Plane(const FourCC& fourcc, const unsigned& hsValue, const unsigned& vsValue)
+-            : fourcc(fourcc)
+-            , horizontalSubsampling(hsValue)
+-            , verticalSubsampling(vsValue)
+-        { }
+-
+-        friend struct IPC::ArgumentCoder<Plane, void>;
+-    };
+-    std::array<Plane, c_maxPlanes> planes;
+-};
+-
+-namespace DMABufFormatImpl {
+-
+-template<DMABufFormat::FourCC fourccValue>
+-inline DMABufFormat createSinglePlaneRGBA()
+-{
+-    return DMABufFormat::instantiate<fourccValue,
+-        DMABufFormat::PlaneDefinition<fourccValue, 0, 0>>();
+-}
+-
+-template<size_t Index, size_t Size, typename PlaneDefinitionType, typename... PlaneDefinitionTypes>
+-void definePlane(std::array<DMABufFormat::Plane, DMABufFormat::c_maxPlanes>& planes)
+-{
+-    new (&planes[Index]) DMABufFormat::Plane(PlaneDefinitionType { });
+-    if constexpr ((Index + 1) < Size)
+-        definePlane<Index + 1, Size, PlaneDefinitionTypes...>(planes);
+-}
+-
+-}
+-
+-template<DMABufFormat::FourCC fourccValue, typename... PlaneDefinitionTypes>
+-inline DMABufFormat DMABufFormat::instantiate()
+-{
+-    static_assert(sizeof...(PlaneDefinitionTypes) <= 4);
+-
+-    DMABufFormat format;
+-    format.fourcc = fourccValue;
+-    format.numPlanes = sizeof...(PlaneDefinitionTypes);
+-    DMABufFormatImpl::definePlane<0, sizeof...(PlaneDefinitionTypes), PlaneDefinitionTypes...>(format.planes);
+-    return format;
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::XRGB8888>()
+-{
+-    return DMABufFormatImpl::createSinglePlaneRGBA<FourCC::XRGB8888>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::XBGR8888>()
+-{
+-    return DMABufFormatImpl::createSinglePlaneRGBA<FourCC::XBGR8888>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::RGBX8888>()
+-{
+-    return DMABufFormatImpl::createSinglePlaneRGBA<FourCC::RGBX8888>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::BGRX8888>()
+-{
+-    return DMABufFormatImpl::createSinglePlaneRGBA<FourCC::BGRX8888>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::ARGB8888>()
+-{
+-    return DMABufFormatImpl::createSinglePlaneRGBA<FourCC::ARGB8888>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::ABGR8888>()
+-{
+-    return DMABufFormatImpl::createSinglePlaneRGBA<FourCC::ABGR8888>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::RGBA8888>()
+-{
+-    return DMABufFormatImpl::createSinglePlaneRGBA<FourCC::RGBA8888>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::BGRA8888>()
+-{
+-    return DMABufFormatImpl::createSinglePlaneRGBA<FourCC::BGRA8888>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::I420>()
+-{
+-    return DMABufFormat::instantiate<FourCC::I420,
+-        PlaneDefinition<FourCC::R8, 0, 0>,
+-        PlaneDefinition<FourCC::R8, 1, 1>,
+-        PlaneDefinition<FourCC::R8, 1, 1>>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::YV12>()
+-{
+-    return DMABufFormat::instantiate<FourCC::YV12,
+-        PlaneDefinition<FourCC::R8, 0, 0>,
+-        PlaneDefinition<FourCC::R8, 1, 1>,
+-        PlaneDefinition<FourCC::R8, 1, 1>>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::A420>()
+-{
+-    return DMABufFormat::instantiate<FourCC::A420,
+-        PlaneDefinition<FourCC::R8, 0, 0>,
+-        PlaneDefinition<FourCC::R8, 1, 1>,
+-        PlaneDefinition<FourCC::R8, 1, 1>,
+-        PlaneDefinition<FourCC::R8, 0, 0>>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::NV12>()
+-{
+-    return DMABufFormat::instantiate<FourCC::NV12,
+-        PlaneDefinition<FourCC::R8, 0, 0>,
+-        PlaneDefinition<FourCC::GR88, 1, 1>>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::NV21>()
+-{
+-    return DMABufFormat::instantiate<FourCC::NV21,
+-        PlaneDefinition<FourCC::R8, 0, 0>,
+-        PlaneDefinition<FourCC::GR88, 1, 1>>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::YUY2>()
+-{
+-    return DMABufFormat::instantiate<FourCC::YUY2,
+-        PlaneDefinition<FourCC::GR88, 0, 0>>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::YVYU>()
+-{
+-    return DMABufFormat::instantiate<FourCC::YVYU,
+-        PlaneDefinition<FourCC::GR88, 0, 0>>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::UYVY>()
+-{
+-    return DMABufFormat::instantiate<FourCC::UYVY,
+-        PlaneDefinition<FourCC::GR88, 0, 0>>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::VYUY>()
+-{
+-    return DMABufFormat::instantiate<FourCC::VYUY,
+-        PlaneDefinition<FourCC::GR88, 0, 0>>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::VUYA>()
+-{
+-    return DMABufFormat::instantiate<FourCC::VUYA,
+-        PlaneDefinition<FourCC::ABGR8888, 0, 0>>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::AYUV>()
+-{
+-    return DMABufFormat::instantiate<FourCC::AYUV,
+-        PlaneDefinition<FourCC::ABGR8888, 0, 0>>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::Y444>()
+-{
+-    return DMABufFormat::instantiate<FourCC::Y444,
+-        PlaneDefinition<FourCC::R8, 0, 0>,
+-        PlaneDefinition<FourCC::R8, 0, 0>,
+-        PlaneDefinition<FourCC::R8, 0, 0>>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::Y41B>()
+-{
+-    return DMABufFormat::instantiate<FourCC::Y41B,
+-        PlaneDefinition<FourCC::R8, 0, 0>,
+-        PlaneDefinition<FourCC::R8, 2, 0>,
+-        PlaneDefinition<FourCC::R8, 2, 0>>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::Y42B>()
+-{
+-    return DMABufFormat::instantiate<FourCC::Y42B,
+-        PlaneDefinition<FourCC::R8, 0, 0>,
+-        PlaneDefinition<FourCC::R8, 1, 0>,
+-        PlaneDefinition<FourCC::R8, 1, 0>>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::P010>()
+-{
+-    return DMABufFormat::instantiate<FourCC::P010,
+-        PlaneDefinition<FourCC::R16, 0, 0>,
+-        PlaneDefinition<FourCC::GR32, 1, 1>>();
+-}
+-
+-template<>
+-inline DMABufFormat DMABufFormat::create<DMABufFormat::FourCC::P016>()
+-{
+-    return DMABufFormat::instantiate<FourCC::P010,
+-        PlaneDefinition<FourCC::R16, 0, 0>,
+-        PlaneDefinition<FourCC::GR32, 1, 1>>();
+-}
+-
+-inline DMABufFormat DMABufFormat::create(uint32_t fourccValue)
+-{
+-#define CREATE_FORMAT_FOR_FOURCC(FourCCValue) \
+-    case uint32_t(FourCC::FourCCValue): \
+-        return create<FourCC::FourCCValue>();
+-
+-    switch (fourccValue) {
+-    CREATE_FORMAT_FOR_FOURCC(XRGB8888);
+-    CREATE_FORMAT_FOR_FOURCC(XBGR8888);
+-    CREATE_FORMAT_FOR_FOURCC(RGBX8888);
+-    CREATE_FORMAT_FOR_FOURCC(BGRX8888);
+-    CREATE_FORMAT_FOR_FOURCC(ARGB8888);
+-    CREATE_FORMAT_FOR_FOURCC(ABGR8888);
+-    CREATE_FORMAT_FOR_FOURCC(RGBA8888);
+-    CREATE_FORMAT_FOR_FOURCC(BGRA8888);
+-    CREATE_FORMAT_FOR_FOURCC(I420);
+-    CREATE_FORMAT_FOR_FOURCC(YV12);
+-    CREATE_FORMAT_FOR_FOURCC(A420);
+-    CREATE_FORMAT_FOR_FOURCC(NV12);
+-    CREATE_FORMAT_FOR_FOURCC(NV21);
+-    CREATE_FORMAT_FOR_FOURCC(YUY2);
+-    CREATE_FORMAT_FOR_FOURCC(YVYU);
+-    CREATE_FORMAT_FOR_FOURCC(UYVY);
+-    CREATE_FORMAT_FOR_FOURCC(VYUY);
+-    CREATE_FORMAT_FOR_FOURCC(VUYA);
+-    CREATE_FORMAT_FOR_FOURCC(AYUV);
+-    CREATE_FORMAT_FOR_FOURCC(Y444);
+-    CREATE_FORMAT_FOR_FOURCC(Y41B);
+-    CREATE_FORMAT_FOR_FOURCC(Y42B);
+-    CREATE_FORMAT_FOR_FOURCC(P010);
+-    CREATE_FORMAT_FOR_FOURCC(P016);
+-    default:
+-        break;
+-    }
+-
+-#undef CREATE_FORMAT_FOR_FOURCC
+-
+-    return { };
+-}
+-
+-} // namespace WebCore
+diff --git a/Source/WebCore/platform/graphics/gbm/DMABufObject.h b/Source/WebCore/platform/graphics/gbm/DMABufObject.h
+deleted file mode 100644
+index 00ff5ab0df35c..0000000000000
+--- a/Source/WebCore/platform/graphics/gbm/DMABufObject.h
++++ /dev/null
+@@ -1,87 +0,0 @@
+-/*
+- * Copyright (C) 2022 Metrological Group B.V.
+- * Copyright (C) 2022-2024 Igalia S.L.
+- *
+- * Redistribution and use in source and binary forms, with or without
+- * modification, are permitted provided that the following conditions
+- * are met:
+- * 1. Redistributions of source code must retain the above copyright
+- *    notice, this list of conditions and the following disclaimer.
+- * 2. Redistributions in binary form must reproduce the above copyright
+- *    notice, this list of conditions and the following disclaimer in the
+- *    documentation and/or other materials provided with the distribution.
+- *
+- * THIS SOFTWARE IS PROVIDED BY APPLE INC. AND ITS CONTRIBUTORS ``AS IS''
+- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+- * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+- * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL APPLE INC. OR ITS CONTRIBUTORS
+- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+- * THE POSSIBILITY OF SUCH DAMAGE.
+- */
+-
+-#pragma once
+-
+-#include "DMABufColorSpace.h"
+-#include "DMABufFormat.h"
+-#include "DMABufReleaseFlag.h"
+-#include <array>
+-#include <cstddef>
+-#include <cstdint>
+-#include <optional>
+-#include <unistd.h>
+-#include <wtf/Noncopyable.h>
+-#include <wtf/unix/UnixFileDescriptor.h>
+-
+-namespace WebCore {
+-
+-class DMABufObject {
+-    WTF_MAKE_NONCOPYABLE(DMABufObject);
+-
+-public:
+-    DMABufObject(DMABufObject&&) = default;
+-
+-    explicit DMABufObject(intptr_t handle)
+-        : handle(handle)
+-    { }
+-
+-    DMABufObject& operator=(DMABufObject&&) = default;
+-
+-    uintptr_t handle { 0 };
+-    DMABufFormat format { };
+-    DMABufColorSpace colorSpace { DMABufColorSpace::Invalid };
+-    uint32_t width { 0 };
+-    uint32_t height { 0 };
+-    DMABufReleaseFlag releaseFlag { };
+-    std::array<UnixFileDescriptor, DMABufFormat::c_maxPlanes> fd { };
+-    std::array<size_t, DMABufFormat::c_maxPlanes> offset { 0, 0, 0, 0 };
+-    std::array<uint32_t, DMABufFormat::c_maxPlanes> stride { 0, 0, 0, 0 };
+-    std::array<bool, DMABufFormat::c_maxPlanes> modifierPresent { false, false, false, false };
+-    std::array<uint64_t, DMABufFormat::c_maxPlanes> modifierValue { 0, 0, 0, 0 };
+-
+-private:
+-    explicit DMABufObject(uintptr_t handle, DMABufFormat format, DMABufColorSpace colorSpace, uint32_t width, uint32_t height,
+-        DMABufReleaseFlag releaseFlag, std::array<UnixFileDescriptor, DMABufFormat::c_maxPlanes>&& fd,
+-        std::array<size_t, DMABufFormat::c_maxPlanes>&& offset, std::array<uint32_t, DMABufFormat::c_maxPlanes>&& stride,
+-        std::array<bool, DMABufFormat::c_maxPlanes>&& modifierPresent, std::array<uint64_t, DMABufFormat::c_maxPlanes>&& modifierValue)
+-            : handle(handle)
+-            , format(format)
+-            , colorSpace(colorSpace)
+-            , width(width)
+-            , height(height)
+-            , releaseFlag(WTFMove(releaseFlag))
+-            , fd(WTFMove(fd))
+-            , offset(WTFMove(offset))
+-            , stride(WTFMove(stride))
+-            , modifierPresent(WTFMove(modifierPresent))
+-            , modifierValue(WTFMove(modifierValue))
+-    { }
+-
+-    friend struct IPC::ArgumentCoder<DMABufObject, void>;
+-};
+-
+-} // namespace WebCore
+diff --git a/Source/WebCore/platform/graphics/gbm/DMABufReleaseFlag.h b/Source/WebCore/platform/graphics/gbm/DMABufReleaseFlag.h
+deleted file mode 100644
+index 39cc9b8ee4d85..0000000000000
+--- a/Source/WebCore/platform/graphics/gbm/DMABufReleaseFlag.h
++++ /dev/null
+@@ -1,94 +0,0 @@
+-/*
+- * Copyright (C) 2022 Metrological Group B.V.
+- * Copyright (C) 2022-2024 Igalia S.L.
+- *
+- * Redistribution and use in source and binary forms, with or without
+- * modification, are permitted provided that the following conditions
+- * are met:
+- * 1. Redistributions of source code must retain the above copyright
+- *    notice, this list of conditions and the following disclaimer.
+- * 2. Redistributions in binary form must reproduce the above copyright
+- *    notice, this list of conditions and the following disclaimer in the
+- *    documentation and/or other materials provided with the distribution.
+- *
+- * THIS SOFTWARE IS PROVIDED BY APPLE INC. AND ITS CONTRIBUTORS ``AS IS''
+- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+- * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+- * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL APPLE INC. OR ITS CONTRIBUTORS
+- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+- * THE POSSIBILITY OF SUCH DAMAGE.
+- */
+-
+-#pragma once
+-
+-#include <sys/eventfd.h>
+-#include <wtf/Noncopyable.h>
+-#include <wtf/SafeStrerror.h>
+-#include <wtf/text/CString.h>
+-#include <wtf/unix/UnixFileDescriptor.h>
+-
+-namespace IPC {
+-template<typename T, typename U> struct ArgumentCoder;
+-}
+-
+-namespace WebCore {
+-
+-struct DMABufReleaseFlag {
+-    WTF_MAKE_NONCOPYABLE(DMABufReleaseFlag);
+-
+-    DMABufReleaseFlag() = default;
+-
+-    enum InitializeTag { Initialize };
+-    DMABufReleaseFlag(InitializeTag)
+-        : fd { eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK), UnixFileDescriptor::Adopt }
+-    { }
+-
+-    ~DMABufReleaseFlag() = default;
+-
+-    DMABufReleaseFlag(DMABufReleaseFlag&&) = default;
+-    DMABufReleaseFlag& operator=(DMABufReleaseFlag&&) = default;
+-
+-    DMABufReleaseFlag dup() const
+-    {
+-        DMABufReleaseFlag flag;
+-        flag.fd = fd.duplicate();
+-        return flag;
+-    }
+-
+-    bool released() const
+-    {
+-        if (!fd)
+-            return true;
+-
+-        uint64_t value { 0 };
+-        if (read(fd.value(), &value, sizeof(uint64_t)) == sizeof(uint64_t))
+-            return !!value;
+-        return false;
+-    }
+-
+-    void release()
+-    {
+-        if (!fd)
+-            return;
+-
+-        uint64_t value { 1 };
+-        if (::write(fd.value(), &value, sizeof(value)) != sizeof(value))
+-            WTFLogAlways("Error writing to the eventfd at DMABufReleaseFlag: %s", safeStrerror(errno).data());
+-    }
+-
+-    UnixFileDescriptor fd;
+-
+-private:
+-    DMABufReleaseFlag(UnixFileDescriptor&& fd)
+-        : fd(WTFMove(fd))
+-    { }
+-
+-    friend struct IPC::ArgumentCoder<DMABufReleaseFlag, void>;
+-};
+-
+-} // namespace WebCore
+diff --git a/Source/WebCore/platform/graphics/gbm/GBMBufferSwapchain.cpp b/Source/WebCore/platform/graphics/gbm/GBMBufferSwapchain.cpp
+deleted file mode 100644
+index c8c5e842327ab..0000000000000
+--- a/Source/WebCore/platform/graphics/gbm/GBMBufferSwapchain.cpp
++++ /dev/null
+@@ -1,207 +0,0 @@
+-/*
+- * Copyright (C) 2022 Metrological Group B.V.
+- * Copyright (C) 2022 Igalia S.L.
+- *
+- * Redistribution and use in source and binary forms, with or without
+- * modification, are permitted provided that the following conditions
+- * are met:
+- * 1. Redistributions of source code must retain the above copyright
+- *    notice, this list of conditions and the following disclaimer.
+- * 2. Redistributions in binary form must reproduce the above copyright
+- *    notice, this list of conditions and the following disclaimer in the
+- *    documentation and/or other materials provided with the distribution.
+- *
+- * THIS SOFTWARE IS PROVIDED BY APPLE INC. AND ITS CONTRIBUTORS ``AS IS''
+- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+- * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+- * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL APPLE INC. OR ITS CONTRIBUTORS
+- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+- * THE POSSIBILITY OF SUCH DAMAGE.
+- */
+-
+-#include "config.h"
+-#include "GBMBufferSwapchain.h"
+-
+-#if USE(GBM)
+-
+-#include "DMABufColorSpace.h"
+-#include "DRMDeviceManager.h"
+-#include <gbm.h>
+-#include <wtf/SafeStrerror.h>
+-#include <wtf/TZoneMallocInlines.h>
+-
+-namespace WebCore {
+-
+-WTF_MAKE_TZONE_ALLOCATED_IMPL(GBMBufferSwapchain);
+-WTF_MAKE_TZONE_ALLOCATED_IMPL_NESTED(GBMBufferSwapchainBuffer, GBMBufferSwapchain::Buffer);
+-
+-GBMBufferSwapchain::GBMBufferSwapchain(BufferSwapchainSize size)
+-{
+-    ASSERT(unsigned(size) <= c_maxBuffers);
+-    m_array.size = unsigned(size);
+-}
+-
+-GBMBufferSwapchain::~GBMBufferSwapchain() = default;
+-
+-static inline bool isBufferFormatSupported(const DMABufFormat& format)
+-{
+-    switch (format.fourcc) {
+-    case DMABufFormat::FourCC::XRGB8888:
+-    case DMABufFormat::FourCC::XBGR8888:
+-    case DMABufFormat::FourCC::RGBX8888:
+-    case DMABufFormat::FourCC::BGRX8888:
+-    case DMABufFormat::FourCC::ARGB8888:
+-    case DMABufFormat::FourCC::ABGR8888:
+-    case DMABufFormat::FourCC::RGBA8888:
+-    case DMABufFormat::FourCC::BGRA8888:
+-    case DMABufFormat::FourCC::I420:
+-    case DMABufFormat::FourCC::YV12:
+-    case DMABufFormat::FourCC::A420:
+-    case DMABufFormat::FourCC::NV12:
+-    case DMABufFormat::FourCC::NV21:
+-    case DMABufFormat::FourCC::YUY2:
+-    case DMABufFormat::FourCC::YVYU:
+-    case DMABufFormat::FourCC::UYVY:
+-    case DMABufFormat::FourCC::VYUY:
+-    case DMABufFormat::FourCC::VUYA:
+-    case DMABufFormat::FourCC::AYUV:
+-    case DMABufFormat::FourCC::Y444:
+-    case DMABufFormat::FourCC::Y41B:
+-    case DMABufFormat::FourCC::Y42B:
+-    case DMABufFormat::FourCC::P010:
+-    case DMABufFormat::FourCC::P016:
+-        return true;
+-    default:
+-        return false;
+-    }
+-}
+-
+-RefPtr<GBMBufferSwapchain::Buffer> GBMBufferSwapchain::getBuffer(const BufferDescription& description)
+-{
+-    auto* device = DRMDeviceManager::singleton().mainGBMDeviceNode(DRMDeviceManager::NodeType::Render);
+-    if (!device) {
+-        WTFLogAlways("Failed to get GBM buffer from swap chain: no GBM device found");
+-        return nullptr;
+-    }
+-
+-    // If the description of the requested buffers has changed, update the description to the new one and wreck the existing buffers.
+-    // This should handle changes in format or dimension of the buffers.
+-    if (description.format.fourcc != m_array.description.format.fourcc || description.width != m_array.description.width || description.height != m_array.description.height || description.flags != m_array.description.flags) {
+-        m_array.description = description;
+-        m_array.object = { };
+-    }
+-
+-    if (!isBufferFormatSupported(description.format)) {
+-        WTFLogAlways("Failed to get GBM buffer from swap chain: unsupported format");
+-        return nullptr;
+-    }
+-
+-    // Swapchain was asked to provide a buffer. The buffer array is traversed to find one.
+-    for (unsigned i = 0; i < m_array.size; ++i) {
+-        if (!m_array.object[i]) {
+-            // If no buffer was spawned yet at this location, we do that, and return it.
+-            auto buffer = adoptRef(*new Buffer(m_handleGenerator++, description));
+-
+-            // Fill out the buffer's description and plane information for known and supported formats.
+-            buffer->m_description.format.numPlanes = description.format.numPlanes;
+-            for (unsigned i = 0; i < buffer->m_description.format.numPlanes; ++i) {
+-                buffer->m_planes[i].fourcc = description.format.planes[i].fourcc;
+-                buffer->m_planes[i].width = description.format.planeWidth(i, description.width);
+-                buffer->m_planes[i].height = description.format.planeHeight(i, description.height);
+-            }
+-
+-            uint32_t boFlags = GBM_BO_USE_RENDERING;
+-            if (description.flags & BufferDescription::LinearStorage)
+-                boFlags |= GBM_BO_USE_LINEAR;
+-
+-            // For each plane, we spawn a gbm_bo object of the appropriate size and format.
+-            // TODO: GBM_BO_USE_LINEAR will be needed when transferring memory into the bo (e.g. copying
+-            // over the software-decoded video data), but might not be required for backing e.g. ANGLE rendering.
+-            for (unsigned i = 0; i < buffer->m_description.format.numPlanes; ++i) {
+-                auto& plane = buffer->m_planes[i];
+-                plane.bo = gbm_bo_create(device, plane.width, plane.height, uint32_t(plane.fourcc), boFlags);
+-                if (!plane.bo) {
+-                    WTFLogAlways("Failed to get GBM buffer from swap chain: error creating plane %u of size %dx%d and format %u: %s\n",
+-                        i, plane.width, plane.height, uint32_t(plane.fourcc), safeStrerror(errno).data());
+-                    return nullptr;
+-                }
+-                plane.stride = gbm_bo_get_stride(plane.bo);
+-            }
+-
+-            // Lock the buffer and return it.
+-            buffer->m_state.locked = true;
+-            m_array.object[i] = buffer.copyRef();
+-            return buffer;
+-        }
+-
+-        // There is already an existing buffer at this location. If marked as locked, update its state by reading
+-        // the release flag. If still locked after that, we have to continue over to the next candidate.
+-        {
+-            auto& buffer = m_array.object[i];
+-            if (buffer->m_state.locked)
+-                buffer->m_state.locked = !buffer->m_state.releaseFlag.released();
+-
+-            if (buffer->m_state.locked)
+-                continue;
+-        }
+-
+-        // This buffer was unlocked, so it can be used. Lock and return it.
+-        auto buffer = m_array.object[i].copyRef();
+-        buffer->m_state.locked = true;
+-
+-        // Swap out the located buffer to the end of the buffer queue. When the next buffer is requested from this
+-        // swapchain, the previously-used buffers will be traversed and tested for release first, meaning there's a
+-        // higher chance we will be able to reuse them, without the penalty of having to traverse to deep into the
+-        // swapchain array.
+-        for (++i; i < m_array.size && !!m_array.object[i]; ++i)
+-            std::swap(m_array.object[i - 1], m_array.object[i]);
+-
+-        return buffer;
+-    }
+-
+-    WTFLogAlways("Failed to get GBM buffer from swap chain: no buffers available");
+-    return nullptr;
+-}
+-
+-GBMBufferSwapchain::Buffer::Buffer(uint32_t handle, const BufferDescription& description)
+-    : m_handle(handle)
+-    , m_description(description)
+-{
+-    m_state.releaseFlag = DMABufReleaseFlag(DMABufReleaseFlag::Initialize);
+-}
+-
+-GBMBufferSwapchain::Buffer::~Buffer() = default;
+-
+-DMABufObject GBMBufferSwapchain::Buffer::createDMABufObject(uintptr_t handle) const
+-{
+-    DMABufObject object(handle);
+-    object.format = m_description.format;
+-    object.width = m_description.width;
+-    object.height = m_description.height;
+-    object.releaseFlag = m_state.releaseFlag.dup();
+-
+-    for (unsigned i = 0; i < m_description.format.numPlanes; ++i) {
+-        object.fd[i] = UnixFileDescriptor { gbm_bo_get_fd(m_planes[i].bo), UnixFileDescriptor::Adopt };
+-        object.offset[i] = 0;
+-        object.stride[i] = m_planes[i].stride;
+-        object.modifierPresent[i] = true;
+-        object.modifierValue[i] = gbm_bo_get_modifier(m_planes[i].bo);
+-    }
+-
+-    return object;
+-}
+-
+-GBMBufferSwapchain::Buffer::PlaneData::~PlaneData()
+-{
+-    if (bo)
+-        gbm_bo_destroy(bo);
+-}
+-
+-} // namespace WebCore
+-
+-#endif // USE(GBM)
+diff --git a/Source/WebCore/platform/graphics/gbm/GBMBufferSwapchain.h b/Source/WebCore/platform/graphics/gbm/GBMBufferSwapchain.h
+deleted file mode 100644
+index 566c58cc71357..0000000000000
+--- a/Source/WebCore/platform/graphics/gbm/GBMBufferSwapchain.h
++++ /dev/null
+@@ -1,138 +0,0 @@
+-/*
+- * Copyright (C) 2022 Metrological Group B.V.
+- * Copyright (C) 2022 Igalia S.L.
+- *
+- * Redistribution and use in source and binary forms, with or without
+- * modification, are permitted provided that the following conditions
+- * are met:
+- * 1. Redistributions of source code must retain the above copyright
+- *    notice, this list of conditions and the following disclaimer.
+- * 2. Redistributions in binary form must reproduce the above copyright
+- *    notice, this list of conditions and the following disclaimer in the
+- *    documentation and/or other materials provided with the distribution.
+- *
+- * THIS SOFTWARE IS PROVIDED BY APPLE INC. AND ITS CONTRIBUTORS ``AS IS''
+- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+- * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+- * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL APPLE INC. OR ITS CONTRIBUTORS
+- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+- * THE POSSIBILITY OF SUCH DAMAGE.
+- */
+-
+-#pragma once
+-
+-#if USE(GBM)
+-
+-#include "DMABufFormat.h"
+-#include "DMABufObject.h"
+-#include "DMABufReleaseFlag.h"
+-#include <array>
+-#include <cstdint>
+-#include <wtf/Noncopyable.h>
+-#include <wtf/Nonmovable.h>
+-#include <wtf/RefPtr.h>
+-#include <wtf/TZoneMalloc.h>
+-#include <wtf/ThreadSafeRefCounted.h>
+-
+-struct gbm_bo;
+-
+-namespace WebCore {
+-
+-class GBMBufferSwapchain : public ThreadSafeRefCounted<GBMBufferSwapchain> {
+-    WTF_MAKE_TZONE_ALLOCATED(GBMBufferSwapchain);
+-public:
+-    // The size should be adjusted to the use-case.
+-    // For cyclical rendering (e.g. WebGL), Four should be ideal since we'll rely on
+-    // something like vsync to maintain a constant framerate and subsequent buffer churn.
+-    // There are other sporadic producers like software-based media decoders that will
+-    // be requesting and filling in buffers in bursts but still have them displayed on
+-    // a cyclical basis. Eight should be enough to cover that.
+-    // In any case, the swapchain will do whatever it can to reuse released buffers
+-    // and not unnecessarily spawn new ones, meaning the limit shouldn't be reached.
+-    // If it is, getBuffer() will return a null object and the producer has to
+-    // handle that somehow.
+-    enum class BufferSwapchainSize : unsigned {
+-        Four = 4,
+-        Eight = 8
+-    };
+-
+-    explicit GBMBufferSwapchain(BufferSwapchainSize);
+-    ~GBMBufferSwapchain();
+-
+-    struct BufferDescription {
+-        enum Flags : uint32_t {
+-            NoFlags = 0,
+-            LinearStorage = 1 << 0,
+-        };
+-
+-        DMABufFormat format { };
+-        uint32_t width { 0 };
+-        uint32_t height  { 0 };
+-        uint32_t flags { NoFlags };
+-    };
+-
+-    class Buffer : public ThreadSafeRefCounted<Buffer> {
+-        WTF_MAKE_TZONE_ALLOCATED(Buffer);
+-    public:
+-        Buffer(uint32_t, const BufferDescription&);
+-        ~Buffer();
+-
+-        DMABufObject createDMABufObject(uintptr_t) const;
+-
+-        struct PlaneData {
+-            WTF_MAKE_NONCOPYABLE(PlaneData);
+-            WTF_MAKE_NONMOVABLE(PlaneData);
+-
+-            PlaneData() = default;
+-            ~PlaneData();
+-
+-            DMABufFormat::FourCC fourcc { DMABufFormat::FourCC::Invalid };
+-            uint32_t width { 0 };
+-            uint32_t height { 0 };
+-            uint32_t stride { 0 };
+-            struct gbm_bo* bo { nullptr };
+-        };
+-
+-        uint32_t handle() const { return m_handle; }
+-
+-        unsigned numPlanes() const { return m_description.format.numPlanes; }
+-        const PlaneData& planeData(unsigned index) const
+-        {
+-            ASSERT(index < DMABufFormat::c_maxPlanes);
+-            return m_planes[index];
+-        }
+-
+-    private:
+-        friend class GBMBufferSwapchain;
+-
+-        uint32_t m_handle { 0 };
+-        struct {
+-            bool locked { false };
+-            DMABufReleaseFlag releaseFlag;
+-        } m_state;
+-
+-        BufferDescription m_description;
+-        std::array<PlaneData, DMABufFormat::c_maxPlanes> m_planes;
+-    };
+-
+-    RefPtr<Buffer> getBuffer(const BufferDescription&);
+-
+-private:
+-    static constexpr unsigned c_maxBuffers = 8;
+-
+-    uint32_t m_handleGenerator { 0 };
+-    struct {
+-        BufferDescription description;
+-        unsigned size { 0 };
+-        std::array<RefPtr<Buffer>, c_maxBuffers> object { };
+-    } m_array;
+-};
+-
+-} // namespace WebCore
+-
+-#endif // USE(GBM)
+diff --git a/Source/WebCore/platform/graphics/gstreamer/DMABufUtilities.cpp b/Source/WebCore/platform/graphics/gstreamer/DMABufUtilities.cpp
+deleted file mode 100644
+index e4c9301ad40c5..0000000000000
+--- a/Source/WebCore/platform/graphics/gstreamer/DMABufUtilities.cpp
++++ /dev/null
+@@ -1,76 +0,0 @@
+-/*
+- *  Copyright (C) 2024 Metrological Group B.V.
+- *  Copyright (C) 2024 Igalia S.L
+- *
+- *  This library is free software; you can redistribute it and/or
+- *  modify it under the terms of the GNU Lesser General Public
+- *  License as published by the Free Software Foundation; either
+- *  version 2 of the License, or (at your option) any later version.
+- *
+- *  This library is distributed in the hope that it will be useful,
+- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+- *  Lesser General Public License for more details.
+- *
+- *  You should have received a copy of the GNU Lesser General Public
+- *  License along with this library; if not, write to the Free Software
+- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+- */
+-
+-#include "config.h"
+-
+-#if USE(GSTREAMER) && USE(TEXTURE_MAPPER_DMABUF)
+-#include "DMABufUtilities.h"
+-
+-namespace WebCore {
+-
+-DMABufDestination::DMABufDestination(struct gbm_bo* bo, uint32_t width, uint32_t height)
+-    : bo(bo)
+-    , height(height)
+-{
+-    map = gbm_bo_map(bo, 0, 0, width, height, GBM_BO_TRANSFER_WRITE, &stride, &mapData);
+-    if (!map)
+-        return;
+-
+-    isValid = true;
+-    data = reinterpret_cast<uint8_t*>(map);
+-}
+-
+-DMABufDestination::~DMABufDestination()
+-{
+-    if (isValid)
+-        gbm_bo_unmap(bo, mapData);
+-}
+-
+-void DMABufDestination::copyPlaneData(GstVideoFrame* sourceVideoFrame, unsigned planeIndex)
+-{
+-    auto sourceStride = GST_VIDEO_FRAME_PLANE_STRIDE(sourceVideoFrame, planeIndex);
+-    auto* planeData = reinterpret_cast<uint8_t*>(GST_VIDEO_FRAME_PLANE_DATA(sourceVideoFrame, planeIndex));
+-    for (uint32_t y = 0; y < height; ++y) {
+-        auto* destinationData = &data[y * stride];
+-        auto* sourceData = &planeData[y * sourceStride];
+-        memcpy(destinationData, sourceData, std::min(static_cast<uint32_t>(sourceStride), stride));
+-    }
+-}
+-
+-bool fillSwapChainBuffer(const RefPtr<GBMBufferSwapchain::Buffer>& buffer, const GRefPtr<GstSample>& sample)
+-{
+-    GstMappedFrame sourceFrame(sample, GST_MAP_READ);
+-    if (!sourceFrame)
+-        return false;
+-
+-    auto* sourceVideoFrame = sourceFrame.get();
+-    for (unsigned i = 0; i < GST_VIDEO_FRAME_N_PLANES(sourceVideoFrame); ++i) {
+-        auto& planeData = buffer->planeData(i);
+-
+-        Locker locker { DMABufDestination::mappingLock() };
+-        DMABufDestination destination(planeData.bo, planeData.width, planeData.height);
+-        if (destination.isValid)
+-            destination.copyPlaneData(sourceVideoFrame, i);
+-    }
+-    return true;
+-}
+-
+-} // namespace WebCore
+-
+-#endif // USE(GSTREAMER) && USE(TEXTURE_MAPPER_DMABUF)
+diff --git a/Source/WebCore/platform/graphics/gstreamer/DMABufUtilities.h b/Source/WebCore/platform/graphics/gstreamer/DMABufUtilities.h
+deleted file mode 100644
+index da16adf3b5561..0000000000000
+--- a/Source/WebCore/platform/graphics/gstreamer/DMABufUtilities.h
++++ /dev/null
+@@ -1,110 +0,0 @@
+-/*
+- *  Copyright (C) 2024 Metrological Group B.V.
+- *  Copyright (C) 2024 Igalia S.L
+- *
+- *  This library is free software; you can redistribute it and/or
+- *  modify it under the terms of the GNU Lesser General Public
+- *  License as published by the Free Software Foundation; either
+- *  version 2 of the License, or (at your option) any later version.
+- *
+- *  This library is distributed in the hope that it will be useful,
+- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+- *  Lesser General Public License for more details.
+- *
+- *  You should have received a copy of the GNU Lesser General Public
+- *  License along with this library; if not, write to the Free Software
+- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+- */
+-
+-#pragma once
+-
+-#if USE(GSTREAMER) && USE(TEXTURE_MAPPER_DMABUF)
+-
+-#include "DMABufColorSpace.h"
+-#include "DMABufFormat.h"
+-#include "GBMBufferSwapchain.h"
+-#include "GStreamerCommon.h"
+-
+-#include <gbm.h>
+-#include <gst/video/video.h>
+-#include <wtf/Lock.h>
+-
+-namespace WebCore {
+-
+-// GStreamer's gst_video_format_to_fourcc() doesn't cover RGB-like formats, so we
+-// provide the appropriate FourCC values for those through this function.
+-inline uint32_t dmaBufFourccValue(GstVideoFormat format)
+-{
+-    switch (format) {
+-    case GST_VIDEO_FORMAT_RGBx:
+-        return uint32_t(DMABufFormat::FourCC::XBGR8888);
+-    case GST_VIDEO_FORMAT_BGRx:
+-        return uint32_t(DMABufFormat::FourCC::XRGB8888);
+-    case GST_VIDEO_FORMAT_xRGB:
+-        return uint32_t(DMABufFormat::FourCC::BGRX8888);
+-    case GST_VIDEO_FORMAT_xBGR:
+-        return uint32_t(DMABufFormat::FourCC::RGBX8888);
+-    case GST_VIDEO_FORMAT_RGBA:
+-        return uint32_t(DMABufFormat::FourCC::ABGR8888);
+-    case GST_VIDEO_FORMAT_BGRA:
+-        return uint32_t(DMABufFormat::FourCC::ARGB8888);
+-    case GST_VIDEO_FORMAT_ARGB:
+-        return uint32_t(DMABufFormat::FourCC::BGRA8888);
+-    case GST_VIDEO_FORMAT_ABGR:
+-        return uint32_t(DMABufFormat::FourCC::RGBA8888);
+-    case GST_VIDEO_FORMAT_P010_10LE:
+-    case GST_VIDEO_FORMAT_P010_10BE:
+-        return uint32_t(DMABufFormat::FourCC::P010);
+-    case GST_VIDEO_FORMAT_P016_LE:
+-    case GST_VIDEO_FORMAT_P016_BE:
+-        return uint32_t(DMABufFormat::FourCC::P016);
+-    default:
+-        break;
+-    }
+-
+-    return gst_video_format_to_fourcc(format);
+-}
+-
+-inline DMABufColorSpace dmaBufColorSpaceForColorimetry(const GstVideoColorimetry* cinfo)
+-{
+-    if (gst_video_colorimetry_matches(cinfo, GST_VIDEO_COLORIMETRY_SRGB))
+-        return DMABufColorSpace::SRGB;
+-    if (gst_video_colorimetry_matches(cinfo, GST_VIDEO_COLORIMETRY_BT601))
+-        return DMABufColorSpace::BT601;
+-    if (gst_video_colorimetry_matches(cinfo, GST_VIDEO_COLORIMETRY_BT709))
+-        return DMABufColorSpace::BT709;
+-    if (gst_video_colorimetry_matches(cinfo, GST_VIDEO_COLORIMETRY_BT2020))
+-        return DMABufColorSpace::BT2020;
+-    if (gst_video_colorimetry_matches(cinfo, GST_VIDEO_COLORIMETRY_SMPTE240M))
+-        return DMABufColorSpace::SMPTE240M;
+-    return DMABufColorSpace::Invalid;
+-}
+-
+-// Destination helper struct, maps the gbm_bo object into CPU-memory space and copies from the accompanying Source.
+-struct DMABufDestination {
+-    static Lock& mappingLock()
+-    {
+-        static Lock s_mappingLock;
+-        return s_mappingLock;
+-    }
+-
+-    DMABufDestination(struct gbm_bo*, uint32_t width, uint32_t height);
+-    ~DMABufDestination();
+-
+-    void copyPlaneData(GstVideoFrame*, unsigned planeIndex);
+-
+-    bool isValid { false };
+-    struct gbm_bo* bo { nullptr };
+-    void* map { nullptr };
+-    void* mapData { nullptr };
+-    uint8_t* data { nullptr };
+-    uint32_t height { 0 };
+-    uint32_t stride { 0 };
+-};
+-
+-bool fillSwapChainBuffer(const RefPtr<GBMBufferSwapchain::Buffer>&, const GRefPtr<GstSample>&);
+-
+-} // namespace WebCore
+-
+-#endif // USE(GSTREAMER) && USE(TEXTURE_MAPPER_DMABUF)
+diff --git a/Source/WebCore/platform/graphics/gstreamer/DMABufVideoSinkGStreamer.cpp b/Source/WebCore/platform/graphics/gstreamer/DMABufVideoSinkGStreamer.cpp
+deleted file mode 100644
+index 7628893b6ac63..0000000000000
+--- a/Source/WebCore/platform/graphics/gstreamer/DMABufVideoSinkGStreamer.cpp
++++ /dev/null
+@@ -1,211 +0,0 @@
+-/*
+- *  Copyright (C) 2022 Igalia, S.L
+- *
+- *  This library is free software; you can redistribute it and/or
+- *  modify it under the terms of the GNU Lesser General Public
+- *  License as published by the Free Software Foundation; either
+- *  version 2 of the License, or (at your option) any later version.
+- *
+- *  This library is distributed in the hope that it will be useful,
+- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+- *  Lesser General Public License for more details.
+- *
+- *  You should have received a copy of the GNU Lesser General Public
+- *  License along with this library; if not, write to the Free Software
+- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+- */
+-
+-#include "config.h"
+-#include "DMABufVideoSinkGStreamer.h"
+-
+-#if ENABLE(VIDEO)
+-
+-#include "GStreamerCommon.h"
+-#include "GStreamerVideoSinkCommon.h"
+-#include <gst/allocators/gstdmabuf.h>
+-#include <mutex>
+-#include <wtf/glib/WTFGType.h>
+-
+-#if USE(GBM)
+-#include "DRMDeviceManager.h"
+-#endif
+-
+-using namespace WebCore;
+-
+-enum {
+-    PROP_0,
+-    PROP_STATS,
+-    PROP_LAST
+-};
+-
+-struct _WebKitDMABufVideoSinkPrivate {
+-    GRefPtr<GstElement> appSink;
+-    MediaPlayerPrivateGStreamer* mediaPlayerPrivate;
+-};
+-
+-GST_DEBUG_CATEGORY_STATIC(webkit_dmabuf_video_sink_debug);
+-#define GST_CAT_DEFAULT webkit_dmabuf_video_sink_debug
+-
+-#define GST_WEBKIT_DMABUF_SINK_CAPS_FORMAT_LIST "{ RGBA, RGBx, BGRA, BGRx, I420, YV12, A420, NV12, NV21, Y444, Y41B, Y42B, VUYA, P010_10LE, P010_10BE, P016_LE, P016BE }"
+-
+-static GstStaticPadTemplate sinkTemplate = GST_STATIC_PAD_TEMPLATE("sink", GST_PAD_SINK, GST_PAD_ALWAYS,
+-    GST_STATIC_CAPS(
+-#if GST_CHECK_VERSION(1, 24, 0)
+-        GST_VIDEO_DMA_DRM_CAPS_MAKE ";"
+-#endif
+-        GST_VIDEO_CAPS_MAKE(GST_WEBKIT_DMABUF_SINK_CAPS_FORMAT_LIST)
+-        ));
+-
+-// TODO: this is a list of remaining YUV formats we want to support, but don't currently work (due to improper handling in TextureMapper):
+-//     YUY2, YVYU, UYVY, VYUY, AYUV
+-
+-#define webkit_dmabuf_video_sink_parent_class parent_class
+-WEBKIT_DEFINE_TYPE_WITH_CODE(WebKitDMABufVideoSink, webkit_dmabuf_video_sink, GST_TYPE_BIN,
+-    GST_DEBUG_CATEGORY_INIT(webkit_dmabuf_video_sink_debug, "webkitdmabufvideosink", 0, "DMABuf video sink element"))
+-
+-// WEBKIT_GST_DMABUF_SINK_FORCED_FALLBACK_CAPS_FORMAT env can be used to force a specific format to be used as the only supported format
+-// by this sink. This is most useful for testing and debugging the rendering pipeline behavior for a given format.
+-static const char* forcedFallbackCapsFormat()
+-{
+-    static char s_format[64] { };
+-    static std::once_flag s_flag;
+-    std::call_once(s_flag,
+-        [&] {
+-            const char* format = g_getenv("WEBKIT_GST_DMABUF_SINK_FORCED_FALLBACK_CAPS_FORMAT");
+-            if (format)
+-                g_strlcpy(const_cast<char*>(s_format), format, 64);
+-            else
+-                s_format[0] = 0;
+-        });
+-
+-    if (!s_format[0])
+-        return nullptr;
+-    return s_format;
+-}
+-
+-static void webKitDMABufVideoSinkConstructed(GObject* object)
+-{
+-    GST_CALL_PARENT(G_OBJECT_CLASS, constructed, (object));
+-
+-    WebKitDMABufVideoSink* sink = WEBKIT_DMABUF_VIDEO_SINK(object);
+-
+-    sink->priv->appSink = makeGStreamerElement("appsink", "webkit-dmabuf-video-appsink");
+-    ASSERT(sink->priv->appSink);
+-    g_object_set(sink->priv->appSink.get(), "enable-last-sample", FALSE, "emit-signals", TRUE, "max-buffers", 1, nullptr);
+-
+-    gst_bin_add(GST_BIN_CAST(sink), sink->priv->appSink.get());
+-
+-    // This sink handles dmabuf data or raw data of any format in the supported format list.
+-    // The dmabuf and raw data types are the two types of data we can handle via this sink (in combination with functionality in
+-    // MediaPlayerPrivateGStreamer). The format list corresponds to the formats we are able to then handle in the graphics pipeline.
+-    // In case of dmabuf data, that dmabuf is handled most optimally and just relayed to the graphics pipeline.
+-    // In case of raw data, dmabuf objects are produced on the spot and filled with that data, and then pushed to the graphics pipeline.
+-
+-    static GstStaticCaps s_dmabufCaps = GST_STATIC_CAPS(
+-#if GST_CHECK_VERSION(1, 24, 0)
+-        GST_VIDEO_DMA_DRM_CAPS_MAKE ";"
+-#endif
+-        GST_VIDEO_CAPS_MAKE_WITH_FEATURES(GST_CAPS_FEATURE_MEMORY_DMABUF, GST_WEBKIT_DMABUF_SINK_CAPS_FORMAT_LIST));
+-    static GstStaticCaps s_fallbackCaps = GST_STATIC_CAPS(GST_VIDEO_CAPS_MAKE(GST_WEBKIT_DMABUF_SINK_CAPS_FORMAT_LIST));
+-
+-    GRefPtr<GstCaps> caps = adoptGRef(gst_caps_new_empty());
+-    {
+-        if (forcedFallbackCapsFormat())
+-            caps = gst_caps_new_simple("video/x-raw", "format", G_TYPE_STRING, forcedFallbackCapsFormat(), nullptr);
+-        else {
+-            gst_caps_append(caps.get(), gst_static_caps_get(&s_dmabufCaps));
+-            gst_caps_append(caps.get(), gst_static_caps_get(&s_fallbackCaps));
+-        }
+-    }
+-    g_object_set(sink->priv->appSink.get(), "caps", caps.get(), nullptr);
+-
+-    GRefPtr<GstPad> pad = adoptGRef(gst_element_get_static_pad(sink->priv->appSink.get(), "sink"));
+-    gst_element_add_pad(GST_ELEMENT_CAST(sink), gst_ghost_pad_new("sink", pad.get()));
+-}
+-
+-void webKitDMABufVideoSinkFinalize(GObject* object)
+-{
+-    ASSERT(isMainThread());
+-
+-    WebKitDMABufVideoSink* sink = WEBKIT_DMABUF_VIDEO_SINK(object);
+-    WebKitDMABufVideoSinkPrivate* priv = sink->priv;
+-
+-    if (priv->mediaPlayerPrivate)
+-        g_signal_handlers_disconnect_by_data(priv->appSink.get(), priv->mediaPlayerPrivate);
+-
+-    GST_DEBUG_OBJECT(object, "WebKitDMABufVideoSink finalized.");
+-
+-    GST_CALL_PARENT(G_OBJECT_CLASS, finalize, (object));
+-}
+-
+-static void webKitDMABufVideoSinkGetProperty(GObject* object, guint propertyId, GValue* value, GParamSpec* paramSpec)
+-{
+-    WebKitDMABufVideoSink* sink = WEBKIT_DMABUF_VIDEO_SINK(object);
+-
+-    switch (propertyId) {
+-    case PROP_STATS: {
+-        GUniqueOutPtr<GstStructure> stats;
+-        g_object_get(sink->priv->appSink.get(), "stats", &stats.outPtr(), nullptr);
+-        gst_value_set_structure(value, stats.get());
+-        break;
+-    }
+-    default:
+-        G_OBJECT_WARN_INVALID_PROPERTY_ID(object, propertyId, paramSpec);
+-        RELEASE_ASSERT_NOT_REACHED();
+-        break;
+-    }
+-}
+-
+-static void webkit_dmabuf_video_sink_class_init(WebKitDMABufVideoSinkClass* klass)
+-{
+-    GObjectClass* objectClass = G_OBJECT_CLASS(klass);
+-    GstElementClass* elementClass = GST_ELEMENT_CLASS(klass);
+-
+-    objectClass->constructed = webKitDMABufVideoSinkConstructed;
+-    objectClass->finalize = webKitDMABufVideoSinkFinalize;
+-    objectClass->get_property = webKitDMABufVideoSinkGetProperty;
+-
+-    gst_element_class_add_pad_template(elementClass, gst_static_pad_template_get(&sinkTemplate));
+-    gst_element_class_set_static_metadata(elementClass, "WebKit DMABuf video sink", "Sink/Video", "Renders video", "Zan Dobersek <zdobersek@igalia.com>");
+-
+-    g_object_class_install_property(objectClass, PROP_STATS, g_param_spec_boxed("stats",
+-        nullptr, nullptr, GST_TYPE_STRUCTURE, static_cast<GParamFlags>(G_PARAM_READABLE | G_PARAM_STATIC_STRINGS)));
+-}
+-
+-bool webKitDMABufVideoSinkIsEnabled()
+-{
+-    static bool s_disabled = false;
+-#if USE(GBM)
+-    static std::once_flag s_flag;
+-    std::call_once(s_flag, [&] {
+-        const char* value = g_getenv("WEBKIT_GST_DMABUF_SINK_DISABLED");
+-        auto valueSpan = span(value);
+-        s_disabled = value && (equalLettersIgnoringASCIICase(valueSpan, "true"_s) || equalLettersIgnoringASCIICase(valueSpan, "1"_s));
+-        if (!s_disabled && !DRMDeviceManager::singleton().mainGBMDeviceNode(DRMDeviceManager::NodeType::Render)) {
+-            WTFLogAlways("Unable to access the GBM device, disabling DMABuf video sink.");
+-            s_disabled = true;
+-        }
+-    });
+-#else
+-    s_disabled = true;
+-#endif
+-    return !s_disabled;
+-}
+-
+-bool webKitDMABufVideoSinkProbePlatform()
+-{
+-    return webkitGstCheckVersion(1, 20, 0) && isGStreamerPluginAvailable("app");
+-}
+-
+-void webKitDMABufVideoSinkSetMediaPlayerPrivate(WebKitDMABufVideoSink* sink, MediaPlayerPrivateGStreamer* player)
+-{
+-    WebKitDMABufVideoSinkPrivate* priv = sink->priv;
+-
+-    priv->mediaPlayerPrivate = player;
+-    webKitVideoSinkSetMediaPlayerPrivate(priv->appSink.get(), priv->mediaPlayerPrivate);
+-}
+-
+-#undef GST_CAT_DEFAULT
+-
+-#endif // ENABLE(VIDEO)
+diff --git a/Source/WebCore/platform/graphics/gstreamer/DMABufVideoSinkGStreamer.h b/Source/WebCore/platform/graphics/gstreamer/DMABufVideoSinkGStreamer.h
+deleted file mode 100644
+index 328e8b7eb9c17..0000000000000
+--- a/Source/WebCore/platform/graphics/gstreamer/DMABufVideoSinkGStreamer.h
++++ /dev/null
+@@ -1,59 +0,0 @@
+-/*
+- *  Copyright (C) 2022 Igalia, S.L
+- *
+- *  This library is free software; you can redistribute it and/or
+- *  modify it under the terms of the GNU Lesser General Public
+- *  License as published by the Free Software Foundation; either
+- *  version 2 of the License, or (at your option) any later version.
+- *
+- *  This library is distributed in the hope that it will be useful,
+- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+- *  Lesser General Public License for more details.
+- *
+- *  You should have received a copy of the GNU Lesser General Public
+- *  License along with this library; if not, write to the Free Software
+- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+- */
+-
+-#pragma once
+-
+-#if ENABLE(VIDEO)
+-
+-#include <gst/gst.h>
+-
+-namespace WebCore {
+-class MediaPlayerPrivateGStreamer;
+-}
+-
+-G_BEGIN_DECLS
+-
+-#define WEBKIT_TYPE_DMABUF_VIDEO_SINK            (webkit_dmabuf_video_sink_get_type ())
+-#define WEBKIT_DMABUF_VIDEO_SINK(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), WEBKIT_TYPE_DMABUF_VIDEO_SINK, WebKitDMABufVideoSink))
+-#define WEBKIT_DMABUF_VIDEO_SINK_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST ((klass), WEBKIT_TYPE_DMABUF_VIDEO_SINK, WebKitDMABufVideoSinkClass))
+-#define WEBKIT_IS_DMABUF_VIDEO_SINK(obj)         (G_TYPE_CHECK_INSTANCE_TYPE ((obj), WEBKIT_TYPE_DMABUF_VIDEO_SINK))
+-#define WEBKIT_IS_DMABUF_VIDEO_SINK_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), WEBKIT_TYPE_DMABUF_VIDEO_SINK))
+-
+-typedef struct _WebKitDMABufVideoSink        WebKitDMABufVideoSink;
+-typedef struct _WebKitDMABufVideoSinkClass   WebKitDMABufVideoSinkClass;
+-typedef struct _WebKitDMABufVideoSinkPrivate WebKitDMABufVideoSinkPrivate;
+-
+-struct _WebKitDMABufVideoSink {
+-    GstBin parent;
+-
+-    WebKitDMABufVideoSinkPrivate *priv;
+-};
+-
+-struct _WebKitDMABufVideoSinkClass {
+-    GstBinClass parentClass;
+-};
+-
+-GType webkit_dmabuf_video_sink_get_type(void);
+-
+-bool webKitDMABufVideoSinkIsEnabled();
+-bool webKitDMABufVideoSinkProbePlatform();
+-void webKitDMABufVideoSinkSetMediaPlayerPrivate(WebKitDMABufVideoSink*, WebCore::MediaPlayerPrivateGStreamer*);
+-
+-G_END_DECLS
+-
+-#endif // ENABLE(VIDEO)
+diff --git a/Source/WebCore/platform/graphics/gstreamer/GLVideoSinkGStreamer.cpp b/Source/WebCore/platform/graphics/gstreamer/GLVideoSinkGStreamer.cpp
+index 9752b4c2baf25..78a67d7642540 100644
+--- a/Source/WebCore/platform/graphics/gstreamer/GLVideoSinkGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/GLVideoSinkGStreamer.cpp
+@@ -26,8 +26,14 @@
+ #include "GStreamerVideoSinkCommon.h"
+ #include "PlatformDisplay.h"
+ #include <gst/gl/gl.h>
++#include <wtf/glib/GUniquePtr.h>
+ #include <wtf/glib/WTFGType.h>
+ 
++#if USE(GBM)
++#include "DRMDeviceManager.h"
++#include <drm_fourcc.h>
++#endif
++
+ // gstglapi.h may include eglplatform.h and it includes X.h, which
+ // defines None, breaking MediaPlayer::None enum
+ #if PLATFORM(X11) && GST_GL_HAVE_PLATFORM_EGL
+@@ -57,6 +63,88 @@ static GstStaticPadTemplate sinkTemplate = GST_STATIC_PAD_TEMPLATE("sink", GST_P
+ WEBKIT_DEFINE_TYPE_WITH_CODE(WebKitGLVideoSink, webkit_gl_video_sink, GST_TYPE_BIN,
+     GST_DEBUG_CATEGORY_INIT(webkit_gl_video_sink_debug, "webkitglvideosink", 0, "GL video sink element"))
+ 
++#if USE(GBM)
++static bool s_isDMABufDisabled;
++
++static void initializeDMABufAvailability()
++{
++    static std::once_flag onceFlag;
++    std::call_once(onceFlag, [] {
++        if (!webkitGstCheckVersion(1, 20, 0))
++            return;
++
++        const char* value = g_getenv("WEBKIT_GST_DMABUF_SINK_DISABLED");
++        auto valueSpan = WTF::span(value);
++        s_isDMABufDisabled = value && (equalLettersIgnoringASCIICase(valueSpan, "true"_s) || equalLettersIgnoringASCIICase(valueSpan, "1"_s));
++        if (!s_isDMABufDisabled && !DRMDeviceManager::singleton().mainGBMDeviceNode(DRMDeviceManager::NodeType::Render))
++            s_isDMABufDisabled = true;
++    });
++}
++
++static GRefPtr<GstCaps> buildDMABufCaps()
++{
++    GRefPtr<GstCaps> caps = adoptGRef(gst_caps_from_string("video/x-raw(memory:DMABuf), width = " GST_VIDEO_SIZE_RANGE ", height = " GST_VIDEO_SIZE_RANGE ", framerate = " GST_VIDEO_FPS_RANGE));
++#if GST_CHECK_VERSION(1, 24, 0)
++    gst_caps_set_simple(caps.get(), "format", G_TYPE_STRING, "DMA_DRM", nullptr);
++
++    static const char* formats = getenv("WEBKIT_GST_DMABUF_FORMATS");
++    if (formats && *formats) {
++        GUniquePtr<char*> tokens(g_strsplit(formats, ",", -1));
++        GValue drmSupportedFormats = G_VALUE_INIT;
++        g_value_init(&drmSupportedFormats, GST_TYPE_LIST);
++        for (unsigned i = 0; tokens.get()[i]; ++i) {
++            GValue value = G_VALUE_INIT;
++            g_value_init(&value, G_TYPE_STRING);
++            g_value_set_string(&value, tokens.get()[i]);
++            gst_value_list_append_value(&drmSupportedFormats, &value);
++            g_value_unset(&value);
++        }
++        gst_caps_set_value(caps.get(), "drm-format", &drmSupportedFormats);
++        g_value_unset(&drmSupportedFormats);
++        return caps;
++    }
++#endif
++
++    GValue supportedFormats = G_VALUE_INIT;
++    g_value_init(&supportedFormats, GST_TYPE_LIST);
++    const auto& dmabufFormats = PlatformDisplay::sharedDisplay().dmabufFormatsForVideo();
++    for (const auto& format : dmabufFormats) {
++#if GST_CHECK_VERSION(1, 24, 0)
++        if (format.modifiers.isEmpty() || format.modifiers[0] == DRM_FORMAT_MOD_INVALID) {
++            GValue value = G_VALUE_INIT;
++            g_value_init(&value, G_TYPE_STRING);
++            g_value_take_string(&value, gst_video_dma_drm_fourcc_to_string(format.fourcc, DRM_FORMAT_MOD_LINEAR));
++            gst_value_list_append_value(&supportedFormats, &value);
++            g_value_unset(&value);
++        } else {
++            for (auto modifier : format.modifiers) {
++                GValue value = G_VALUE_INIT;
++                g_value_init(&value, G_TYPE_STRING);
++                g_value_take_string(&value, gst_video_dma_drm_fourcc_to_string(format.fourcc, modifier));
++                gst_value_list_append_value(&supportedFormats, &value);
++                g_value_unset(&value);
++            }
++        }
++#else
++        GValue value = G_VALUE_INIT;
++        g_value_init(&value, G_TYPE_STRING);
++        g_value_set_string(&value, gst_video_format_to_string(gst_video_dma_drm_fourcc_to_format(format.fourcc)));
++        gst_value_list_append_value(&supportedFormats, &value);
++        g_value_unset(&value);
++#endif
++    }
++
++#if GST_CHECK_VERSION(1, 24, 0)
++    gst_caps_set_value(caps.get(), "drm-format", &supportedFormats);
++#else
++    gst_caps_set_value(caps.get(), "format", &supportedFormats);
++#endif
++    g_value_unset(&supportedFormats);
++
++    return caps;
++}
++#endif
++
+ static void webKitGLVideoSinkConstructed(GObject* object)
+ {
+     GST_CALL_PARENT(G_OBJECT_CLASS, constructed, (object));
+@@ -88,8 +176,15 @@ static void webKitGLVideoSinkConstructed(GObject* object)
+     ASSERT(colorconvert);
+     gst_bin_add_many(GST_BIN_CAST(sink), upload, colorconvert, sink->priv->appSink.get(), nullptr);
+ 
+-    GRefPtr<GstCaps> caps = adoptGRef(gst_caps_from_string("video/x-raw, format = (string) " GST_GL_CAPS_FORMAT));
+-    gst_caps_set_features(caps.get(), 0, gst_caps_features_new(GST_CAPS_FEATURE_MEMORY_GL_MEMORY, nullptr));
++    GRefPtr<GstCaps> caps = adoptGRef(gst_caps_new_empty());
++#if USE(GBM)
++    if (!s_isDMABufDisabled)
++        gst_caps_append(caps.get(), buildDMABufCaps().leakRef());
++#endif
++    GRefPtr<GstCaps> glCaps = adoptGRef(gst_caps_from_string("video/x-raw, format = (string) " GST_GL_CAPS_FORMAT));
++    gst_caps_set_features(glCaps.get(), 0, gst_caps_features_new(GST_CAPS_FEATURE_MEMORY_GL_MEMORY, nullptr));
++    gst_caps_append(caps.get(), glCaps.leakRef());
++
+     g_object_set(sink->priv->appSink.get(), "caps", caps.get(), nullptr);
+ 
+     if (imxVideoConvertG2D)
+@@ -232,6 +327,10 @@ bool webKitGLVideoSinkProbePlatform()
+         return false;
+     }
+ 
++#if USE(GBM)
++    initializeDMABufAvailability();
++#endif
++
+     return isGStreamerPluginAvailable("app") && isGStreamerPluginAvailable("opengl");
+ }
+ 
+diff --git a/Source/WebCore/platform/graphics/gstreamer/GStreamerCommon.cpp b/Source/WebCore/platform/graphics/gstreamer/GStreamerCommon.cpp
+index 96a4587c23358..81f671362d8e3 100644
+--- a/Source/WebCore/platform/graphics/gstreamer/GStreamerCommon.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/GStreamerCommon.cpp
+@@ -24,7 +24,6 @@
+ #if USE(GSTREAMER)
+ 
+ #include "ApplicationGLib.h"
+-#include "DMABufVideoSinkGStreamer.h"
+ #include "GLVideoSinkGStreamer.h"
+ #include "GStreamerAudioMixer.h"
+ #include "GStreamerQuirks.h"
+@@ -394,7 +393,6 @@ void registerWebKitGStreamerElements()
+ 
+ #if ENABLE(VIDEO)
+         gst_element_register(0, "webkitwebsrc", GST_RANK_PRIMARY + 100, WEBKIT_TYPE_WEB_SRC);
+-        gst_element_register(0, "webkitdmabufvideosink", GST_RANK_NONE, WEBKIT_TYPE_DMABUF_VIDEO_SINK);
+         gst_element_register(0, "webkitglvideosink", GST_RANK_NONE, WEBKIT_TYPE_GL_VIDEO_SINK);
+ #endif
+         // We don't want autoaudiosink to autoplug our sink.
+diff --git a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
+index d408c368e009b..3ebce9c7478b9 100644
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
+@@ -118,14 +118,6 @@
+ #include "TextureMapperPlatformLayerProxyGL.h"
+ #endif // USE(TEXTURE_MAPPER)
+ 
+-#if USE(TEXTURE_MAPPER_DMABUF)
+-#include "DMABufUtilities.h"
+-#include "DMABufVideoSinkGStreamer.h"
+-#include "GBMBufferSwapchain.h"
+-#include "TextureMapperPlatformLayerProxyDMABuf.h"
+-#include <gst/allocators/gstdmabuf.h>
+-#endif // USE(TEXTURE_MAPPER_DMABUF)
+-
+ #if USE(EXTERNAL_HOLEPUNCH)
+ #include "MediaPlayerPrivateHolePunch.h"
+ #endif
+@@ -174,9 +166,6 @@ MediaPlayerPrivateGStreamer::MediaPlayerPrivateGStreamer(MediaPlayer* player)
+ #if !RELEASE_LOG_DISABLED
+     , m_logger(player->mediaPlayerLogger())
+     , m_logIdentifier(player->mediaPlayerLogIdentifier())
+-#endif
+-#if USE(TEXTURE_MAPPER_DMABUF)
+-    , m_swapchain(adoptRef(new GBMBufferSwapchain(GBMBufferSwapchain::BufferSwapchainSize::Eight)))
+ #endif
+     , m_loader(player->mediaResourceLoader())
+ {
+@@ -201,14 +190,7 @@ MediaPlayerPrivateGStreamer::MediaPlayerPrivateGStreamer(MediaPlayer* player)
+     }
+ 
+ #if USE(TEXTURE_MAPPER)
+-    if (isHolePunchRenderingEnabled())
+-        m_platformLayer = TextureMapperPlatformLayerProxyGL::create(TextureMapperPlatformLayerProxy::ContentType::HolePunch);
+-#if USE(TEXTURE_MAPPER_DMABUF)
+-    else if (webKitDMABufVideoSinkIsEnabled() && webKitDMABufVideoSinkProbePlatform())
+-        m_platformLayer = TextureMapperPlatformLayerProxyDMABuf::create(TextureMapperPlatformLayerProxy::ContentType::Video);
+-#endif
+-    else
+-        m_platformLayer = TextureMapperPlatformLayerProxyGL::create(TextureMapperPlatformLayerProxy::ContentType::Video);
++    m_platformLayer = TextureMapperPlatformLayerProxyGL::create(isHolePunchRenderingEnabled() ? TextureMapperPlatformLayerProxy::ContentType::HolePunch : TextureMapperPlatformLayerProxy::ContentType::Video);
+ #endif
+ 
+     ensureGStreamerInitialized();
+@@ -3340,192 +3322,6 @@ void MediaPlayerPrivateGStreamer::pushTextureToCompositor()
+ }
+ #endif // USE(TEXTURE_MAPPER)
+ 
+-#if USE(TEXTURE_MAPPER_DMABUF)
+-
+-struct DMABufMemoryQuarkData {
+-    DMABufReleaseFlag releaseFlag;
+-};
+-
+-G_DEFINE_QUARK(DMABufMemoryQuarkData, dmabuf_memory);
+-
+-void MediaPlayerPrivateGStreamer::pushDMABufToCompositor()
+-{
+-    m_dmabufMemory.removeIf([](auto& memory) -> bool {
+-        auto* quarkData = static_cast<DMABufMemoryQuarkData*>(gst_mini_object_get_qdata(GST_MINI_OBJECT_CAST(memory.get()), dmabuf_memory_quark()));
+-        if (!quarkData)
+-            return true;
+-        return quarkData->releaseFlag.released();
+-    });
+-
+-    Locker sampleLocker { m_sampleMutex };
+-    if (!GST_IS_SAMPLE(m_sample.get()))
+-        return;
+-
+-    auto* caps = gst_sample_get_caps(m_sample.get());
+-    if (!caps)
+-        return;
+-
+-    GstVideoInfo videoInfo;
+-    gst_video_info_init(&videoInfo);
+-    if (!gst_video_info_from_caps(&videoInfo, caps))
+-        return;
+-
+-    auto* buffer = gst_sample_get_buffer(m_sample.get());
+-    if (!buffer)
+-        return;
+-
+-    auto* meta = gst_buffer_get_video_meta(buffer);
+-    if (meta) {
+-        GST_VIDEO_INFO_WIDTH(&videoInfo) = meta->width;
+-        GST_VIDEO_INFO_HEIGHT(&videoInfo) = meta->height;
+-
+-        for (unsigned i = 0; i < meta->n_planes; ++i) {
+-            GST_VIDEO_INFO_PLANE_OFFSET(&videoInfo, i) = meta->offset[i];
+-            GST_VIDEO_INFO_PLANE_STRIDE(&videoInfo, i) = meta->stride[i];
+-        }
+-    }
+-
+-    auto textureMapperFlags = m_textureMapperFlags;
+-    if (GST_VIDEO_INFO_HAS_ALPHA(&videoInfo))
+-        textureMapperFlags.add({ TextureMapperFlags::ShouldBlend, TextureMapperFlags::ShouldPremultiply });
+-
+-    ++m_sampleCount;
+-
+-    ASSERT(is<TextureMapperPlatformLayerProxyDMABuf>(*m_platformLayer));
+-
+-    Locker locker { m_platformLayer->lock() };
+-    if (!m_platformLayer->isActive()) {
+-        GST_ERROR_OBJECT(pipeline(), "TextureMapperPlatformLayerProxyDMABuf is inactive");
+-        textureMapperPlatformLayerProxyWasInvalidated();
+-        return;
+-    }
+-
+-    // Currently we have to cover two ways of detecting a DMABuf memory. The most reliable is by detecting
+-    // the memory:DMABuf feature on the GstCaps object. All sensible decoders yielding DMABufs specify this.
+-    // For all other decoders, another option is peeking the zero-index GstMemory and testing whether it's
+-    // a DMABuf memory, i.e. allocated by a DMABuf-capable allocator. If it is, we can proceed the same way.
+-    bool isDMABufMemory = gst_caps_features_contains(gst_caps_get_features(caps, 0), GST_CAPS_FEATURE_MEMORY_DMABUF)
+-        || gst_is_dmabuf_memory(gst_buffer_peek_memory(buffer, 0));
+-    if (isDMABufMemory) {
+-        // In case of a hardware decoder that's yielding dmabuf memory, we can take the relevant data and
+-        // push it into the composition process.
+-        auto memory = adoptGRef(gst_buffer_get_memory(buffer, 0));
+-
+-        // Provide the DMABufObject with a relevant handle (memory address). When provided for the first time,
+-        // the lambda will be invoked and all dmabuf data is filled in.
+-        downcast<TextureMapperPlatformLayerProxyDMABuf>(*m_platformLayer).pushDMABuf(
+-            DMABufObject(reinterpret_cast<uintptr_t>(memory.get())),
+-            [&](auto&& object) {
+-                bool infoHasDrmFormat = false;
+-                uint32_t fourcc = 0;
+-#if GST_CHECK_VERSION(1, 24, 0)
+-                GstVideoInfoDmaDrm drmInfo;
+-                infoHasDrmFormat = gst_video_info_dma_drm_from_caps(&drmInfo, caps);
+-                if (infoHasDrmFormat)
+-                    fourcc = drmInfo.drm_fourcc;
+-#endif
+-                if (!fourcc)
+-                    fourcc = dmaBufFourccValue(GST_VIDEO_INFO_FORMAT(&videoInfo));
+-
+-                object.format = DMABufFormat::create(fourcc);
+-                object.colorSpace = dmaBufColorSpaceForColorimetry(&GST_VIDEO_INFO_COLORIMETRY(&videoInfo));
+-
+-                if (m_videoSize.isEmpty()) {
+-                    object.width = GST_VIDEO_INFO_WIDTH(&videoInfo);
+-                    object.height = GST_VIDEO_INFO_HEIGHT(&videoInfo);
+-                } else {
+-                    object.width = m_videoSize.width();
+-                    object.height = m_videoSize.height();
+-                }
+-
+-                // The dmabuf object itself doesn't provide anything useful, but the decoder won't
+-                // reuse the dmabuf until the relevant GstSample reference is dropped by the
+-                // downstream pipeline. So for this to work, we associate the GstMemory reference
+-                // count with this release flag so that the reference is dropped once the release
+-                // flag is signalled.
+-                object.releaseFlag = DMABufReleaseFlag(DMABufReleaseFlag::Initialize);
+-
+-                gst_mini_object_set_qdata(GST_MINI_OBJECT_CAST(memory.get()), dmabuf_memory_quark(),
+-                    new DMABufMemoryQuarkData { object.releaseFlag.dup() },
+-                    [](gpointer data) {
+-                        delete static_cast<DMABufMemoryQuarkData*>(data);
+-                    });
+-
+-                // For each plane, the relevant data (stride, offset, skip, dmabuf fd) is retrieved and assigned
+-                // as appropriate.
+-                for (unsigned i = 0; i < object.format.numPlanes; ++i) {
+-                    gsize offset = GST_VIDEO_INFO_PLANE_OFFSET(&videoInfo, i);
+-                    guint memid = 0;
+-                    guint length = 0;
+-                    gsize skip = 0;
+-                    if (gst_buffer_find_memory(buffer, offset, 1, &memid, &length, &skip)) {
+-                        auto* mem = gst_buffer_peek_memory(buffer, memid);
+-                        object.fd[i] = { gst_dmabuf_memory_get_fd(mem), UnixFileDescriptor::Duplicate };
+-                        offset = mem->offset + skip;
+-                    } else
+-                        object.fd[i] = { };
+-
+-                    gint comp[GST_VIDEO_MAX_COMPONENTS];
+-                    gst_video_format_info_component(videoInfo.finfo, i, comp);
+-                    object.offset[i] = offset;
+-                    object.stride[i] = GST_VIDEO_INFO_PLANE_STRIDE(&videoInfo, i);
+-                    object.modifierPresent[i] = infoHasDrmFormat;
+-#if GST_CHECK_VERSION(1, 24, 0)
+-                    if (infoHasDrmFormat)
+-                        object.modifierValue[i] = drmInfo.drm_modifier;
+-#endif
+-                }
+-                return WTFMove(object);
+-            }, textureMapperFlags);
+-
+-        m_hasFirstVideoSampleBeenRendered = true;
+-        auto* quarkData = static_cast<DMABufMemoryQuarkData*>(gst_mini_object_get_qdata(GST_MINI_OBJECT_CAST(memory.get()), dmabuf_memory_quark()));
+-        if (quarkData)
+-            m_dmabufMemory.add(WTFMove(memory));
+-
+-        return;
+-    }
+-
+-    // If the decoder is exporting raw memory, we have to use the swapchain to allocate appropriate buffers
+-    // and copy over the data for each plane. For that to work, linear-storage buffer is required.
+-
+-    auto fourcc = dmaBufFourccValue(GST_VIDEO_INFO_FORMAT(&videoInfo));
+-    if (fourcc == uint32_t(DMABufFormat::FourCC::Invalid)) {
+-        GST_ERROR_OBJECT(pipeline(), "Invalid DMABuf fourcc for GStreamer video format %s", gst_video_format_to_string(GST_VIDEO_INFO_FORMAT(&videoInfo)));
+-        return;
+-    }
+-
+-    GBMBufferSwapchain::BufferDescription bufferDescription {
+-        .format = DMABufFormat::create(fourcc),
+-        .width = static_cast<uint32_t>GST_VIDEO_INFO_WIDTH(&videoInfo),
+-        .height = static_cast<uint32_t>GST_VIDEO_INFO_HEIGHT(&videoInfo),
+-        .flags = GBMBufferSwapchain::BufferDescription::LinearStorage,
+-    };
+-
+-    auto swapchainBuffer = m_swapchain->getBuffer(bufferDescription);
+-    if (!swapchainBuffer) {
+-        GST_ERROR_OBJECT(pipeline(), "Swap chain has no available buffer");
+-        return;
+-    }
+-
+-    if (!fillSwapChainBuffer(swapchainBuffer, m_sample))
+-        return;
+-
+-    // The updated buffer is pushed into the composition stage. The DMABufObject handle uses the swapchain address as the handle base.
+-    // When the buffer is pushed for the first time, the lambda will be invoked to retrieve a more complete DMABufObject for the
+-    // given GBMBufferSwapchain::Buffer object.
+-    GST_TRACE_OBJECT(pipeline(), "Pushing DMABuf object to TextureMapper");
+-    downcast<TextureMapperPlatformLayerProxyDMABuf>(*m_platformLayer).pushDMABuf(
+-        DMABufObject(reinterpret_cast<uintptr_t>(m_swapchain.get()) + swapchainBuffer->handle()),
+-        [&](auto&& initialObject) {
+-            auto object = swapchainBuffer->createDMABufObject(initialObject.handle);
+-            object.colorSpace = dmaBufColorSpaceForColorimetry(&GST_VIDEO_INFO_COLORIMETRY(&videoInfo));
+-            return object;
+-        }, textureMapperFlags);
+-    m_hasFirstVideoSampleBeenRendered = true;
+-}
+-#endif // USE(TEXTURE_MAPPER_DMABUF)
+-
+ void MediaPlayerPrivateGStreamer::repaint()
+ {
+     ASSERT(m_sample);
+@@ -3774,12 +3570,6 @@ void MediaPlayerPrivateGStreamer::triggerRepaint(GRefPtr<GstSample>&& sample)
+     }
+ 
+ #if USE(TEXTURE_MAPPER)
+-#if USE(TEXTURE_MAPPER_DMABUF)
+-    if (is<TextureMapperPlatformLayerProxyDMABuf>(*m_platformLayer)) {
+-        pushDMABufToCompositor();
+-        return;
+-    }
+-#endif
+     pushTextureToCompositor();
+ #endif // USE(TEXTURE_MAPPER)
+ }
+@@ -3962,23 +3752,6 @@ MediaPlayer::MovieLoadType MediaPlayerPrivateGStreamer::movieLoadType() const
+     return MediaPlayer::MovieLoadType::Download;
+ }
+ 
+-#if USE(TEXTURE_MAPPER_DMABUF)
+-GstElement* MediaPlayerPrivateGStreamer::createVideoSinkDMABuf()
+-{
+-    if (!webKitDMABufVideoSinkIsEnabled())
+-        return nullptr;
+-    if (!webKitDMABufVideoSinkProbePlatform()) {
+-        g_warning("WebKit wasn't able to find the DMABuf video sink dependencies. Hardware-accelerated zero-copy video rendering won't be achievable with this plugin.");
+-        return nullptr;
+-    }
+-
+-    GstElement* sink = gst_element_factory_make("webkitdmabufvideosink", nullptr);
+-    ASSERT(sink);
+-    webKitDMABufVideoSinkSetMediaPlayerPrivate(WEBKIT_DMABUF_VIDEO_SINK(sink), this);
+-    return sink;
+-}
+-#endif
+-
+ GstElement* MediaPlayerPrivateGStreamer::createVideoSinkGL()
+ {
+     const char* disableGLSink = g_getenv("WEBKIT_GST_DISABLE_GL_SINK");
+@@ -4097,11 +3870,6 @@ GstElement* MediaPlayerPrivateGStreamer::createVideoSink()
+         return m_videoSink.get();
+     }
+ 
+-#if USE(TEXTURE_MAPPER_DMABUF)
+-    if (!m_videoSink && m_canRenderingBeAccelerated)
+-        m_videoSink = createVideoSinkDMABuf();
+-#endif
+-
+     if (!m_videoSink && m_canRenderingBeAccelerated)
+         m_videoSink = createVideoSinkGL();
+ 
+diff --git a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
+index 9efc6f3733721..2708f5162714e 100644
+--- a/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
++++ b/Source/WebCore/platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.h
+@@ -90,10 +90,6 @@ class InbandMetadataTextTrackPrivateGStreamer;
+ class InbandTextTrackPrivateGStreamer;
+ class VideoTrackPrivateGStreamer;
+ 
+-#if USE(TEXTURE_MAPPER_DMABUF)
+-class GBMBufferSwapchain;
+-#endif
+-
+ enum class TextureMapperFlags : uint16_t;
+ 
+ void registerWebKitGStreamerElements();
+@@ -264,20 +260,12 @@ class MediaPlayerPrivateGStreamer
+     void pushNextHolePunchBuffer();
+     bool shouldIgnoreIntrinsicSize() final;
+ 
+-#if USE(TEXTURE_MAPPER_DMABUF)
+-    GstElement* createVideoSinkDMABuf();
+-#endif
+-
+     GstElement* createVideoSinkGL();
+ 
+ #if USE(TEXTURE_MAPPER)
+     void pushTextureToCompositor();
+ #endif
+ 
+-#if USE(TEXTURE_MAPPER_DMABUF)
+-    void pushDMABufToCompositor();
+-#endif
+-
+     GstElement* videoSink() const { return m_videoSink.get(); }
+ 
+     void setStreamVolumeElement(GstStreamVolume*);
+@@ -597,11 +585,6 @@ class MediaPlayerPrivateGStreamer
+ 
+     String m_errorMessage;
+ 
+-#if USE(TEXTURE_MAPPER_DMABUF)
+-    HashSet<GRefPtr<GstMemory>> m_dmabufMemory;
+-    RefPtr<GBMBufferSwapchain> m_swapchain;
+-#endif
+-
+     GRefPtr<GstStreamCollection> m_streamCollection;
+ 
+     AbortableTaskQueue m_sinkTaskQueue;
+diff --git a/Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.cpp b/Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.cpp
+index fa214aa049606..7b285f9b28b81 100644
+--- a/Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.cpp
++++ b/Source/WebCore/platform/graphics/gstreamer/VideoFrameGStreamer.cpp
+@@ -322,7 +322,7 @@ RefPtr<VideoFrameGStreamer> VideoFrameGStreamer::createFromPixelBuffer(Ref<Pixel
+         format = GST_VIDEO_FORMAT_BGRA;
+         break;
+     }
+-    auto formatName = span(gst_video_format_to_string(format));
++    auto formatName = WTF::span(gst_video_format_to_string(format));
+     GST_TRACE("Creating %s VideoFrame from pixel buffer", formatName.data());
+ 
+     int frameRateNumerator, frameRateDenominator;
+@@ -590,7 +590,7 @@ GRefPtr<GstSample> VideoFrameGStreamer::convert(GstVideoFormat format, const Int
+ 
+     auto width = destinationSize.width();
+     auto height = destinationSize.height();
+-    auto formatName = span(gst_video_format_to_string(format));
++    auto formatName = WTF::span(gst_video_format_to_string(format));
+     auto outputCaps = adoptGRef(gst_caps_new_simple("video/x-raw", "format", G_TYPE_STRING, formatName.data(), "width", G_TYPE_INT, width, "height", G_TYPE_INT, height, "framerate", GST_TYPE_FRACTION, frameRateNumerator, frameRateDenominator, nullptr));
+ 
+     if (gst_caps_is_equal(caps, outputCaps.get()))
+diff --git a/Source/WebCore/platform/graphics/texmap/TextureMapperPlatformLayerProxyDMABuf.cpp b/Source/WebCore/platform/graphics/texmap/TextureMapperPlatformLayerProxyDMABuf.cpp
+deleted file mode 100644
+index a12cdef61c393..0000000000000
+--- a/Source/WebCore/platform/graphics/texmap/TextureMapperPlatformLayerProxyDMABuf.cpp
++++ /dev/null
+@@ -1,342 +0,0 @@
+-/*
+- * Copyright (C) 2022 Metrological Group B.V.
+- * Copyright (C) 2022 Igalia S.L.
+- *
+- * Redistribution and use in source and binary forms, with or without
+- * modification, are permitted provided that the following conditions
+- * are met:
+- * 1. Redistributions of source code must retain the above copyright
+- *    notice, this list of conditions and the following disclaimer.
+- * 2. Redistributions in binary form must reproduce the above copyright
+- *    notice, this list of conditions and the following disclaimer in the
+- *    documentation and/or other materials provided with the distribution.
+- *
+- * THIS SOFTWARE IS PROVIDED BY APPLE INC. AND ITS CONTRIBUTORS ``AS IS''
+- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+- * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+- * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL APPLE INC. OR ITS CONTRIBUTORS
+- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+- * THE POSSIBILITY OF SUCH DAMAGE.
+- */
+-
+-#include "config.h"
+-#include "TextureMapperPlatformLayerProxyDMABuf.h"
+-
+-#if USE(COORDINATED_GRAPHICS) && USE(TEXTURE_MAPPER_DMABUF)
+-
+-#include "PlatformDisplay.h"
+-#include "TextureMapperGLHeaders.h"
+-#include "TextureMapperLayer.h"
+-#include <fcntl.h>
+-#include <initializer_list>
+-#include <unistd.h>
+-#include <wtf/TZoneMallocInlines.h>
+-
+-#if USE(LIBEPOXY)
+-#include <epoxy/egl.h>
+-#else
+-#include <EGL/egl.h>
+-#include <EGL/eglext.h>
+-#endif
+-
+-// This has to be included after the EGL headers.
+-#include "DMABufEGLUtilities.h"
+-
+-namespace WebCore {
+-
+-WTF_MAKE_TZONE_ALLOCATED_IMPL(TextureMapperPlatformLayerProxyDMABuf);
+-WTF_MAKE_TZONE_ALLOCATED_IMPL_NESTED(TextureMapperPlatformLayerProxyDMABufDMABufLayer, TextureMapperPlatformLayerProxyDMABuf::DMABufLayer);
+-
+-struct TextureMapperPlatformLayerProxyDMABuf::DMABufLayer::EGLImageData {
+-    WTF_MAKE_STRUCT_FAST_ALLOCATED;
+-
+-    ~EGLImageData()
+-    {
+-        if (numImages) {
+-            auto& platformDisplay = PlatformDisplay::sharedDisplay();
+-            glDeleteTextures(numImages, texture.data());
+-
+-            for (unsigned i = 0; i < numImages; ++i) {
+-                if (image[i] != EGL_NO_IMAGE_KHR)
+-                    platformDisplay.destroyEGLImage(image[i]);
+-            }
+-        }
+-    }
+-
+-    uint32_t width { 0 };
+-    uint32_t height { 0 };
+-    unsigned numImages { 0 };
+-    std::array<GLuint, DMABufFormat::c_maxPlanes> texture { 0, 0, 0, 0 };
+-    std::array<EGLImageKHR, DMABufFormat::c_maxPlanes> image { EGL_NO_IMAGE_KHR, EGL_NO_IMAGE_KHR, EGL_NO_IMAGE_KHR, EGL_NO_IMAGE_KHR };
+-};
+-
+-TextureMapperPlatformLayerProxyDMABuf::TextureMapperPlatformLayerProxyDMABuf(ContentType contentType)
+-    : TextureMapperPlatformLayerProxy(contentType)
+-{
+-}
+-
+-TextureMapperPlatformLayerProxyDMABuf::~TextureMapperPlatformLayerProxyDMABuf() = default;
+-
+-void TextureMapperPlatformLayerProxyDMABuf::activateOnCompositingThread(Compositor* compositor, TextureMapperLayer* targetLayer)
+-{
+-#if ASSERT_ENABLED
+-    if (!m_compositorThread)
+-        m_compositorThread = &Thread::current();
+-#endif
+-    ASSERT(m_compositorThread == &Thread::current());
+-    ASSERT(compositor);
+-    ASSERT(targetLayer);
+-
+-    {
+-        Locker locker { m_lock };
+-        m_compositor = compositor;
+-        if (m_targetLayer)
+-            m_targetLayer->setContentsLayer(nullptr);
+-        m_targetLayer = targetLayer;
+-    }
+-}
+-
+-void TextureMapperPlatformLayerProxyDMABuf::invalidate()
+-{
+-    ASSERT(m_compositorThread == &Thread::current());
+-#if ASSERT_ENABLED
+-    m_compositorThread = nullptr;
+-#endif
+-
+-    Locker locker { m_lock };
+-
+-    m_pendingLayer = nullptr;
+-    m_committedLayer = nullptr;
+-    m_layers = { };
+-
+-    m_compositor = nullptr;
+-    if (m_targetLayer)
+-        m_targetLayer->setContentsLayer(nullptr);
+-    m_targetLayer = nullptr;
+-}
+-
+-void TextureMapperPlatformLayerProxyDMABuf::swapBuffer()
+-{
+-    Locker locker { m_lock };
+-    if (!m_targetLayer || !m_pendingLayer)
+-        return;
+-
+-    auto previousLayer = WTFMove(m_committedLayer);
+-    m_committedLayer = WTFMove(m_pendingLayer);
+-    m_targetLayer->setContentsLayer(m_committedLayer.get());
+-
+-    // The previous and just-committed layers shouldn't be the same. But if they are, don't perform a release.
+-    ASSERT(!previousLayer || previousLayer != m_committedLayer);
+-    if (previousLayer && previousLayer != m_committedLayer)
+-        previousLayer->release();
+-
+-    if (!m_committedLayer->m_imageData)
+-        m_committedLayer->m_imageData = DMABufLayer::createEGLImageData(m_committedLayer->m_object);
+-    m_committedLayer->m_age = 0;
+-
+-    // Remove any stale layers, e.g. if a layer has gone unused for >c_maximumAge swaps or doesn't match the latest size.
+-    auto& committedObject = m_committedLayer->m_object;
+-    auto isStaleLayer =
+-        [&](auto& it)
+-        {
+-            auto& layer = it.value.get();
+-            return layer.m_age > DMABufLayer::c_maximumAge
+-                || !(layer.m_object.width == committedObject.width && layer.m_object.height == committedObject.height);
+-        };
+-
+-    bool hasStaleLayers = false;
+-    for (auto it = m_layers.begin(); it != m_layers.end(); ++it) {
+-        ++it->value->m_age;
+-        hasStaleLayers |= isStaleLayer(*it);
+-    }
+-
+-    if (hasStaleLayers)
+-        m_layers.removeIf(isStaleLayer);
+-}
+-
+-void TextureMapperPlatformLayerProxyDMABuf::pushDMABuf(Ref<DMABufLayer>&& dmabufLayer)
+-{
+-    ASSERT(m_lock.isHeld());
+-
+-    // The pending and just-pushed layers shouldn't be the same. But if they are, don't perform a release.
+-    ASSERT(!m_pendingLayer || m_pendingLayer != dmabufLayer.ptr());
+-    if (m_pendingLayer && m_pendingLayer != dmabufLayer.ptr())
+-        m_pendingLayer->release();
+-
+-    m_pendingLayer = WTFMove(dmabufLayer);
+-
+-#if HAVE(DISPLAY_LINK)
+-    // WebGL changes will cause a composition request during layerFlush. We cannot request
+-    // a new compostion here as well or we may trigger two compositions instead of one.
+-    if (contentType() == ContentType::WebGL)
+-        return;
+-#endif
+-
+-    if (m_compositor)
+-        m_compositor->onNewBufferAvailable();
+-}
+-
+-TextureMapperPlatformLayerProxyDMABuf::DMABufLayer::DMABufLayer(DMABufObject&& object, OptionSet<TextureMapperFlags> flags)
+-    : m_object(WTFMove(object))
+-    , m_flags(flags)
+-{
+-}
+-
+-TextureMapperPlatformLayerProxyDMABuf::DMABufLayer::~DMABufLayer() = default;
+-
+-void TextureMapperPlatformLayerProxyDMABuf::DMABufLayer::paintToTextureMapper(TextureMapper& textureMapper, const FloatRect& targetRect, const TransformationMatrix& modelViewMatrix, float opacity)
+-{
+-    if (!m_imageData)
+-        return;
+-
+-    if (m_fence) {
+-        m_fence->serverWait();
+-        m_fence = nullptr;
+-    }
+-
+-    static constexpr std::array<GLfloat, 16> s_bt601ConversionMatrix {
+-        1.164383561643836,  0.0,                1.596026785714286, -0.874202217873451,
+-        1.164383561643836, -0.391762290094914, -0.812967647237771,  0.531667823499146,
+-        1.164383561643836,  2.017232142857143,  0.0,               -1.085630789302022,
+-        0.0,                0.0,                0.0,                1.0,
+-    };
+-
+-    static constexpr std::array<GLfloat, 16> s_bt709ConversionMatrix {
+-        1.164383561643836,  0.0,                1.792741071428571, -0.972945075016308,
+-        1.164383561643836, -0.213248614273730, -0.532909328559444,  0.301482665475862,
+-        1.164383561643836,  2.112401785714286,  0.0,               -1.133402217873451,
+-        0.0,                0.0,                0.0,                1.0,
+-    };
+-
+-    static constexpr std::array<GLfloat, 16> s_bt2020ConversionMatrix {
+-        1.164383561643836,  0.0,                1.678674107142857, -0.915687932159165,
+-        1.164383561643836, -0.187326104219343, -0.650424318505057,  0.347458498519301,
+-        1.164383561643836,  2.141772321428571,  0.0,               -1.148145075016308,
+-        0.0,                0.0,                0.0,                1.0,
+-    };
+-
+-    static constexpr std::array<GLfloat, 16> s_smpte240MConversionMatrix {
+-        1.164383561643836,  0.0,                1.793651785714286, -0.973402217873451,
+-        1.164383561643836, -0.256532845251675, -0.542724809537390,  0.328136638536074,
+-        1.164383561643836,  2.07984375,         0.0,               -1.117059360730593,
+-        0.0,                0.0,                0.0,                1.0,
+-    };
+-
+-    // Based on the specified colorspace, a YUV-to-RGB matrix is chosen. The default is the BT.601 matrix.
+-    // Invalid or SRGB colorspace defaults to that as well, but in case of RGBA-like formats, the matrix
+-    // of course goes unused. This is complemented with the below assert that for those formats the specified
+-    // colorspace is either invalid or SRGB.
+-    const std::array<GLfloat, 16>& yuvToRGB =
+-        [&] {
+-            switch (m_object.colorSpace) {
+-            case DMABufColorSpace::Invalid:
+-            case DMABufColorSpace::SRGB:
+-                break;
+-            case DMABufColorSpace::BT601:
+-                return s_bt601ConversionMatrix;
+-            case DMABufColorSpace::BT709:
+-                return s_bt709ConversionMatrix;
+-            case DMABufColorSpace::BT2020:
+-                return s_bt2020ConversionMatrix;
+-            case DMABufColorSpace::SMPTE240M:
+-                return s_smpte240MConversionMatrix;
+-            }
+-            return s_bt601ConversionMatrix;
+-        }();
+-
+-    auto& data = *m_imageData;
+-
+-    switch (m_object.format.fourcc) {
+-    case DMABufFormat::FourCC::XRGB8888:
+-    case DMABufFormat::FourCC::XBGR8888:
+-    case DMABufFormat::FourCC::ARGB8888:
+-    case DMABufFormat::FourCC::ABGR8888:
+-        // Either no colorspace or the SRGB colorspace was defined for this object. Other options are not meaningful.
+-        ASSERT(m_object.colorSpace == DMABufColorSpace::Invalid || m_object.colorSpace == DMABufColorSpace::SRGB);
+-        textureMapper.drawTexture(data.texture[0], m_flags, targetRect, modelViewMatrix, opacity);
+-        break;
+-    case DMABufFormat::FourCC::I420:
+-    case DMABufFormat::FourCC::Y444:
+-    case DMABufFormat::FourCC::Y41B:
+-    case DMABufFormat::FourCC::Y42B:
+-        textureMapper.drawTexturePlanarYUV(std::array<GLuint, 3> { data.texture[0], data.texture[1], data.texture[2] },
+-            yuvToRGB, m_flags, targetRect, modelViewMatrix, opacity, std::nullopt);
+-        break;
+-    case DMABufFormat::FourCC::YV12:
+-        textureMapper.drawTexturePlanarYUV(std::array<GLuint, 3> { data.texture[0], data.texture[2], data.texture[1] },
+-            yuvToRGB, m_flags, targetRect, modelViewMatrix, opacity, std::nullopt);
+-        break;
+-    case DMABufFormat::FourCC::A420:
+-        textureMapper.drawTexturePlanarYUV(std::array<GLuint, 3> { data.texture[0], data.texture[1], data.texture[2] },
+-            yuvToRGB, m_flags, targetRect, modelViewMatrix, opacity, data.texture[3]);
+-        break;
+-    case DMABufFormat::FourCC::NV12:
+-    case DMABufFormat::FourCC::NV21:
+-        textureMapper.drawTextureSemiPlanarYUV(std::array<GLuint, 2> { data.texture[0], data.texture[1] },
+-            (m_object.format.fourcc == DMABufFormat::FourCC::NV21),
+-            yuvToRGB, m_flags, targetRect, modelViewMatrix, opacity);
+-        break;
+-    case DMABufFormat::FourCC::YUY2:
+-    case DMABufFormat::FourCC::YVYU:
+-    case DMABufFormat::FourCC::UYVY:
+-    case DMABufFormat::FourCC::VYUY:
+-    case DMABufFormat::FourCC::VUYA:
+-    case DMABufFormat::FourCC::AYUV:
+-        textureMapper.drawTexturePackedYUV(data.texture[0],
+-            yuvToRGB, m_flags, targetRect, modelViewMatrix, opacity);
+-        break;
+-    case DMABufFormat::FourCC::P010:
+-    case DMABufFormat::FourCC::P016:
+-        // These HDR formats have 10 bits color depth, but since we support only 8 bits color depth, we
+-        // threat it as a regular semi-planar YUV format, thus ignoring the two least significant
+-        // bits when rendering.
+-        textureMapper.drawTextureSemiPlanarYUV(std::array<GLuint, 2> { data.texture[0], data.texture[1] },
+-            false, yuvToRGB, m_flags, targetRect, modelViewMatrix, opacity);
+-        break;
+-    default:
+-        break;
+-    }
+-}
+-
+-std::unique_ptr<TextureMapperPlatformLayerProxyDMABuf::DMABufLayer::EGLImageData> TextureMapperPlatformLayerProxyDMABuf::DMABufLayer::createEGLImageData(DMABufObject& object)
+-{
+-    using EGLImageData = TextureMapperPlatformLayerProxyDMABuf::DMABufLayer::EGLImageData;
+-
+-    auto& platformDisplay = PlatformDisplay::sharedDisplay();
+-
+-    EGLImageKHR image[DMABufFormat::c_maxPlanes];
+-    for (unsigned i = 0; i < object.format.numPlanes; ++i) {
+-        auto attributes = DMABufEGLUtilities::constructEGLCreateImageAttributes(object, i,
+-            DMABufEGLUtilities::PlaneModifiersUsage { platformDisplay.eglExtensions().EXT_image_dma_buf_import_modifiers });
+-        image[i] = platformDisplay.createEGLImage(EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attributes);
+-    }
+-
+-    auto imageData = makeUnique<EGLImageData>();
+-    auto& data = *imageData;
+-    data.width = object.width;
+-    data.height = object.height;
+-    data.numImages = object.format.numPlanes;
+-    glGenTextures(data.numImages, data.texture.data());
+-    for (unsigned i = 0; i < data.numImages; ++i) {
+-        data.image[i] = image[i];
+-
+-        glBindTexture(GL_TEXTURE_2D, data.texture[i]);
+-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+-        glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, data.image[i]);
+-        glBindTexture(GL_TEXTURE_2D, 0);
+-    }
+-
+-    return imageData;
+-}
+-
+-} // namespace WebCore
+-
+-#endif // USE(COORDINATED_GRAPHICS) && USE(TEXTURE_MAPPER_DMABUF)
+diff --git a/Source/WebCore/platform/graphics/texmap/TextureMapperPlatformLayerProxyDMABuf.h b/Source/WebCore/platform/graphics/texmap/TextureMapperPlatformLayerProxyDMABuf.h
+deleted file mode 100644
+index 819aa526371b1..0000000000000
+--- a/Source/WebCore/platform/graphics/texmap/TextureMapperPlatformLayerProxyDMABuf.h
++++ /dev/null
+@@ -1,124 +0,0 @@
+-/*
+- * Copyright (C) 2022 Metrological Group B.V.
+- * Copyright (C) 2022 Igalia S.L.
+- *
+- * Redistribution and use in source and binary forms, with or without
+- * modification, are permitted provided that the following conditions
+- * are met:
+- * 1. Redistributions of source code must retain the above copyright
+- *    notice, this list of conditions and the following disclaimer.
+- * 2. Redistributions in binary form must reproduce the above copyright
+- *    notice, this list of conditions and the following disclaimer in the
+- *    documentation and/or other materials provided with the distribution.
+- *
+- * THIS SOFTWARE IS PROVIDED BY APPLE INC. AND ITS CONTRIBUTORS ``AS IS''
+- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+- * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+- * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL APPLE INC. OR ITS CONTRIBUTORS
+- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+- * THE POSSIBILITY OF SUCH DAMAGE.
+- */
+-
+-#pragma once
+-
+-#include "TextureMapperPlatformLayerProxy.h"
+-
+-#if USE(COORDINATED_GRAPHICS) && USE(TEXTURE_MAPPER_DMABUF)
+-
+-#include "DMABufFormat.h"
+-#include "DMABufObject.h"
+-#include "GLFence.h"
+-#include "TextureMapperFlags.h"
+-#include "TextureMapperPlatformLayer.h"
+-#include <cstdint>
+-#include <memory>
+-#include <wtf/OptionSet.h>
+-#include <wtf/TZoneMalloc.h>
+-
+-namespace WebCore {
+-
+-class TextureMapper;
+-
+-class TextureMapperPlatformLayerProxyDMABuf final : public TextureMapperPlatformLayerProxy {
+-    WTF_MAKE_TZONE_ALLOCATED(TextureMapperPlatformLayerProxyDMABuf);
+-public:
+-    static Ref<TextureMapperPlatformLayerProxy> create(ContentType contentType)
+-    {
+-        return adoptRef(*new TextureMapperPlatformLayerProxyDMABuf(contentType));
+-    }
+-    virtual ~TextureMapperPlatformLayerProxyDMABuf();
+-
+-    bool isDMABufBased() const override { return true; }
+-
+-    WEBCORE_EXPORT void activateOnCompositingThread(Compositor*, TextureMapperLayer*) override;
+-    WEBCORE_EXPORT void invalidate() override;
+-    WEBCORE_EXPORT void swapBuffer() override;
+-
+-    class DMABufLayer : public ThreadSafeRefCounted<DMABufLayer>, public TextureMapperPlatformLayer {
+-        WTF_MAKE_TZONE_ALLOCATED(DMABufLayer);
+-    public:
+-        explicit DMABufLayer(DMABufObject&&, OptionSet<TextureMapperFlags> = { });
+-        virtual ~DMABufLayer();
+-
+-        void paintToTextureMapper(TextureMapper&, const FloatRect&, const TransformationMatrix& modelViewMatrix = { }, float opacity = 1.0) final;
+-        void setFence(std::unique_ptr<GLFence>&& fence) { m_fence = WTFMove(fence); }
+-
+-        void release()
+-        {
+-            m_object.releaseFlag.release();
+-        }
+-
+-    private:
+-        friend class TextureMapperPlatformLayerProxyDMABuf;
+-
+-        struct EGLImageData;
+-        static std::unique_ptr<EGLImageData> createEGLImageData(DMABufObject&);
+-
+-        DMABufObject m_object;
+-        std::unique_ptr<EGLImageData> m_imageData;
+-        OptionSet<TextureMapperFlags> m_flags;
+-
+-        static constexpr unsigned c_maximumAge { 16 };
+-        unsigned m_age { 0 };
+-        std::unique_ptr<GLFence> m_fence;
+-    };
+-
+-    template<typename F>
+-    void pushDMABuf(DMABufObject&& dmabufObject, const F& constructor, OptionSet<TextureMapperFlags> flags = { }, std::unique_ptr<GLFence>&& fence = nullptr)
+-    {
+-        ASSERT(m_lock.isHeld());
+-
+-        auto result = m_layers.ensure(dmabufObject.handle,
+-            [&] {
+-                return adoptRef(*new DMABufLayer(constructor(WTFMove(dmabufObject)), flags));
+-            });
+-        result.iterator->value->setFence(WTFMove(fence));
+-        pushDMABuf(result.iterator->value.copyRef());
+-    }
+-
+-private:
+-    explicit TextureMapperPlatformLayerProxyDMABuf(ContentType);
+-
+-    void pushDMABuf(Ref<DMABufLayer>&&);
+-
+-#if ASSERT_ENABLED
+-    RefPtr<Thread> m_compositorThread;
+-#endif
+-
+-    using LayerMap = HashMap<uintptr_t, Ref<DMABufLayer>, WTF::DefaultHash<uintptr_t>, WTF::UnsignedWithZeroKeyHashTraits<uintptr_t>>;
+-    LayerMap m_layers;
+-
+-    RefPtr<DMABufLayer> m_pendingLayer;
+-    RefPtr<DMABufLayer> m_committedLayer;
+-};
+-
+-} // namespace WebCore
+-
+-SPECIALIZE_TYPE_TRAITS_TEXTUREMAPPER_PLATFORMLAYERPROXY(TextureMapperPlatformLayerProxyDMABuf, isDMABufBased());
+-
+-#endif // USE(COORDINATED_GRAPHICS) && USE(TEXTURE_MAPPER_DMABUF)
+diff --git a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.cpp b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.cpp
+index 50c06b206045c..b4b3f4a0869e7 100644
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.cpp
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.cpp
+@@ -29,12 +29,15 @@
+ #if USE(COORDINATED_GRAPHICS) && USE(GBM)
+ #include "BitmapTexture.h"
+ #include "CoordinatedPlatformLayerBufferRGB.h"
++#include "CoordinatedPlatformLayerBufferYUV.h"
+ #include "DMABufBuffer.h"
+ #include "PlatformDisplay.h"
+ #include "TextureMapper.h"
+ #include <drm_fourcc.h>
+ #include <epoxy/egl.h>
+ #include <epoxy/gl.h>
++#include <wtf/HashMap.h>
++#include <wtf/NeverDestroyed.h>
+ 
+ namespace WebCore {
+ 
+@@ -63,61 +66,198 @@ CoordinatedPlatformLayerBufferDMABuf::CoordinatedPlatformLayerBufferDMABuf(Ref<D
+ 
+ CoordinatedPlatformLayerBufferDMABuf::~CoordinatedPlatformLayerBufferDMABuf() = default;
+ 
+-std::unique_ptr<CoordinatedPlatformLayerBuffer> CoordinatedPlatformLayerBufferDMABuf::importDMABuf(TextureMapper& textureMapper) const
++static RefPtr<BitmapTexture> importToTexture(const IntSize& size, const IntSize& subsampling, uint32_t fourcc, const Vector<int>& fds, const Vector<uint32_t>& offsets, const Vector<uint32_t>& strides, uint64_t modifier, OptionSet<BitmapTexture::Flags> textureFlags, TextureMapper& textureMapper)
+ {
+     auto& display = PlatformDisplay::sharedDisplay();
+-    auto image = [&](const DMABufBuffer::Attributes& buffer) -> EGLImage {
+-        Vector<EGLAttrib> attributes = {
+-            EGL_WIDTH, buffer.size.width(),
+-            EGL_HEIGHT, buffer.size.height(),
+-            EGL_LINUX_DRM_FOURCC_EXT, static_cast<EGLAttrib>(buffer.fourcc)
+-        };
++    Vector<EGLAttrib> attributes = {
++        EGL_WIDTH, size.width() / subsampling.width(),
++        EGL_HEIGHT, size.height() / subsampling.height(),
++        EGL_LINUX_DRM_FOURCC_EXT, static_cast<EGLAttrib>(fourcc)
++    };
+ 
+ #define ADD_PLANE_ATTRIBUTES(planeIndex) { \
+     std::array<EGLAttrib, 6> planeAttributes { \
+-        EGL_DMA_BUF_PLANE##planeIndex##_FD_EXT, buffer.fds[planeIndex].value(), \
+-        EGL_DMA_BUF_PLANE##planeIndex##_OFFSET_EXT, static_cast<EGLAttrib>(buffer.offsets[planeIndex]), \
+-        EGL_DMA_BUF_PLANE##planeIndex##_PITCH_EXT, static_cast<EGLAttrib>(buffer.strides[planeIndex]) \
++        EGL_DMA_BUF_PLANE##planeIndex##_FD_EXT, fds[planeIndex], \
++        EGL_DMA_BUF_PLANE##planeIndex##_OFFSET_EXT, static_cast<EGLAttrib>(offsets[planeIndex]), \
++        EGL_DMA_BUF_PLANE##planeIndex##_PITCH_EXT, static_cast<EGLAttrib>(strides[planeIndex]) \
+     }; \
+     attributes.append(std::span<const EGLAttrib> { planeAttributes }); \
+-    if (buffer.modifier != DRM_FORMAT_MOD_INVALID && display.eglExtensions().EXT_image_dma_buf_import_modifiers) { \
++    if (modifier != DRM_FORMAT_MOD_INVALID && display.eglExtensions().EXT_image_dma_buf_import_modifiers) { \
+         std::array<EGLAttrib, 4> modifierAttributes { \
+-            EGL_DMA_BUF_PLANE##planeIndex##_MODIFIER_HI_EXT, static_cast<EGLAttrib>(buffer.modifier >> 32), \
+-            EGL_DMA_BUF_PLANE##planeIndex##_MODIFIER_LO_EXT, static_cast<EGLAttrib>(buffer.modifier & 0xffffffff) \
++            EGL_DMA_BUF_PLANE##planeIndex##_MODIFIER_HI_EXT, static_cast<EGLAttrib>(modifier >> 32), \
++            EGL_DMA_BUF_PLANE##planeIndex##_MODIFIER_LO_EXT, static_cast<EGLAttrib>(modifier & 0xffffffff) \
+         }; \
+         attributes.append(std::span<const EGLAttrib> { modifierAttributes }); \
+     } \
+     }
+ 
+-        auto planeCount = buffer.fds.size();
+-        if (planeCount > 0)
+-            ADD_PLANE_ATTRIBUTES(0);
+-        if (planeCount > 1)
+-            ADD_PLANE_ATTRIBUTES(1);
+-        if (planeCount > 2)
+-            ADD_PLANE_ATTRIBUTES(2);
+-        if (planeCount > 3)
+-            ADD_PLANE_ATTRIBUTES(3);
++    auto planeCount = fds.size();
++    if (planeCount > 0)
++        ADD_PLANE_ATTRIBUTES(0);
++    if (planeCount > 1)
++        ADD_PLANE_ATTRIBUTES(1);
++    if (planeCount > 2)
++        ADD_PLANE_ATTRIBUTES(2);
++    if (planeCount > 3)
++        ADD_PLANE_ATTRIBUTES(3);
+ 
+ #undef ADD_PLANE_ATTRIBUTES
+ 
+-        attributes.append(EGL_NONE);
+-
+-        return display.createEGLImage(EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attributes);
+-    }(m_dmabuf->attributes());
++    attributes.append(EGL_NONE);
+ 
++    auto image = display.createEGLImage(EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attributes);
+     if (!image)
+         return nullptr;
+ 
+-    OptionSet<BitmapTexture::Flags> textureFlags;
+-    if (m_flags.contains(TextureMapperFlags::ShouldBlend))
+-        textureFlags.add(BitmapTexture::Flags::SupportsAlpha);
+-    auto texture = textureMapper.acquireTextureFromPool(m_size, textureFlags);
++    auto texture = textureMapper.acquireTextureFromPool(size, textureFlags);
+     glBindTexture(GL_TEXTURE_2D, texture->id());
+     glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
+     display.destroyEGLImage(image);
++    return texture;
++}
++
++static bool formatIsYUV(uint32_t fourcc)
++{
++    switch (fourcc) {
++    case DRM_FORMAT_YUV420:
++    case DRM_FORMAT_YVU420:
++    case DRM_FORMAT_NV12:
++    case DRM_FORMAT_NV21:
++    case DRM_FORMAT_YUV444:
++    case DRM_FORMAT_YUV411:
++    case DRM_FORMAT_YUV422:
++    case DRM_FORMAT_AYUV:
++    case DRM_FORMAT_P010:
++        return true;
++    }
++
++    return false;
++}
++
++struct YUVPlaneInfo {
++    uint32_t fourcc;
++    unsigned index;
++    unsigned offset;
++    IntSize subsampling;
++};
++
++static const HashMap<uint32_t, Vector<YUVPlaneInfo>>& yuvFormatPlaneInfo()
++{
++    static NeverDestroyed<HashMap<uint32_t, Vector<YUVPlaneInfo>>> yuvFormatsMap = [] {
++        HashMap<uint32_t, Vector<YUVPlaneInfo>> map;
++        // 1 plane formats.
++        map.set(DRM_FORMAT_AYUV, Vector<YUVPlaneInfo> {
++            { DRM_FORMAT_ABGR8888, 0, 0, { 1, 1 } },
++        });
++
++        // 2 plane formats.
++        map.set(DRM_FORMAT_NV12, Vector<YUVPlaneInfo> {
++            { DRM_FORMAT_R8, 0, 0, { 1, 1 } },
++            { DRM_FORMAT_GR88, 1, 0, { 2, 2 } },
++        });
++        map.set(DRM_FORMAT_NV21, Vector<YUVPlaneInfo> {
++            { DRM_FORMAT_R8, 0, 0, { 1, 1 } },
++            { DRM_FORMAT_GR88, 1, 1, { 2, 2 } },
++        });
++        map.set(DRM_FORMAT_P010, Vector<YUVPlaneInfo> {
++            { DRM_FORMAT_R16, 0, 0, { 1, 1 } },
++            { DRM_FORMAT_GR1616, 1, 0, { 2, 2 } },
++        });
+ 
+-    return CoordinatedPlatformLayerBufferRGB::create(WTFMove(texture), m_flags, nullptr);
++        // 3 plane formats.
++        map.set(DRM_FORMAT_YUV420, Vector<YUVPlaneInfo> {
++            { DRM_FORMAT_R8, 0, 0, { 1, 1 } },
++            { DRM_FORMAT_R8, 1, 0, { 2, 2 } },
++            { DRM_FORMAT_R8, 2, 0, { 2, 2 } },
++        });
++        map.set(DRM_FORMAT_YVU420, Vector<YUVPlaneInfo> {
++            { DRM_FORMAT_R8, 0, 0, { 1, 1 } },
++            { DRM_FORMAT_R8, 2, 0, { 2, 2 } },
++            { DRM_FORMAT_R8, 1, 0, { 2, 2 } },
++        });
++        map.set(DRM_FORMAT_YUV444, Vector<YUVPlaneInfo> {
++            { DRM_FORMAT_R8, 0, 0, { 1, 1 } },
++            { DRM_FORMAT_R8, 1, 0, { 1, 1 } },
++            { DRM_FORMAT_R8, 2, 0, { 1, 1 } },
++        });
++        map.set(DRM_FORMAT_YUV411, Vector<YUVPlaneInfo> {
++            { DRM_FORMAT_R8, 0, 0, { 1, 1 } },
++            { DRM_FORMAT_R8, 1, 0, { 4, 1 } },
++            { DRM_FORMAT_R8, 2, 0, { 4, 1 } },
++        });
++        map.set(DRM_FORMAT_YUV422, Vector<YUVPlaneInfo> {
++            { DRM_FORMAT_R8, 0, 0, { 1, 1 } },
++            { DRM_FORMAT_R8, 1, 0, { 2, 1 } },
++            { DRM_FORMAT_R8, 2, 0, { 2, 1 } },
++        });
++        return map;
++    }();
++    return yuvFormatsMap;
++}
++
++std::unique_ptr<CoordinatedPlatformLayerBuffer> CoordinatedPlatformLayerBufferDMABuf::importYUV(TextureMapper& textureMapper) const
++{
++    OptionSet<BitmapTexture::Flags> textureFlags;
++    if (m_flags.contains(TextureMapperFlags::ShouldBlend))
++        textureFlags.add(BitmapTexture::Flags::SupportsAlpha);
++
++    Vector<RefPtr<BitmapTexture>, 4> textures;
++    std::array<unsigned, 4> yuvPlane;
++    std::array<unsigned, 4> yuvPlaneOffset;
++
++    const auto& attributes = m_dmabuf->attributes();
++    const auto& iter = yuvFormatPlaneInfo().find(attributes.fourcc);
++    if (iter == yuvFormatPlaneInfo().end())
++        return nullptr;
++
++    const auto& planeInfo = iter->value;
++    for (unsigned i = 0; i < planeInfo.size(); ++i) {
++        const auto& plane = planeInfo[i];
++        auto texture = importToTexture(attributes.size, plane.subsampling, plane.fourcc, { attributes.fds[i].value() }, { attributes.offsets[i] }, { attributes.strides[i] }, attributes.modifier, textureFlags, textureMapper);
++        if (!texture)
++            return nullptr;
++        textures.append(WTFMove(texture));
++        yuvPlane[i] = plane.index;
++        yuvPlaneOffset[i] = plane.offset;
++    }
++
++    if (textures.isEmpty())
++        return nullptr;
++
++    CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace yuvToRgbColorSpace;
++    switch (m_dmabuf->colorSpace().value_or(DMABufBuffer::ColorSpace::BT601)) {
++    case DMABufBuffer::ColorSpace::BT601:
++        yuvToRgbColorSpace = CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace::BT601;
++        break;
++    case DMABufBuffer::ColorSpace::BT709:
++        yuvToRgbColorSpace = CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace::BT709;
++        break;
++    case DMABufBuffer::ColorSpace::BT2020:
++        yuvToRgbColorSpace = CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace::BT2020;
++        break;
++    case DMABufBuffer::ColorSpace::SMPTE240M:
++        yuvToRgbColorSpace = CoordinatedPlatformLayerBufferYUV::YuvToRgbColorSpace::SMPTE240M;
++        break;
++    }
++
++    unsigned numberOfPlanes = textures.size();
++    return CoordinatedPlatformLayerBufferYUV::create(numberOfPlanes, WTFMove(textures), WTFMove(yuvPlane), WTFMove(yuvPlaneOffset), yuvToRgbColorSpace, m_size, m_flags, nullptr);
++}
++
++std::unique_ptr<CoordinatedPlatformLayerBuffer> CoordinatedPlatformLayerBufferDMABuf::importDMABuf(TextureMapper& textureMapper) const
++{
++    const auto& attributes = m_dmabuf->attributes();
++    if (formatIsYUV(attributes.fourcc))
++        return importYUV(textureMapper);
++
++    OptionSet<BitmapTexture::Flags> textureFlags;
++    if (m_flags.contains(TextureMapperFlags::ShouldBlend))
++        textureFlags.add(BitmapTexture::Flags::SupportsAlpha);
++    Vector<int> fds = attributes.fds.map<Vector<int>>([] (const UnixFileDescriptor& fd) {
++        return fd.value();
++    });
++    auto texture = importToTexture(attributes.size, { 1, 1 }, attributes.fourcc, fds, attributes.offsets, attributes.strides, attributes.modifier, textureFlags, textureMapper);
++    return texture ? CoordinatedPlatformLayerBufferRGB::create(texture.releaseNonNull(), m_flags, nullptr) : nullptr;
+ }
+ 
+ void CoordinatedPlatformLayerBufferDMABuf::paintToTextureMapper(TextureMapper& textureMapper, const FloatRect& targetRect, const TransformationMatrix& modelViewMatrix, float opacity)
+diff --git a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.h b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.h
+index 541e73a79dfef..5c5507b3f601d 100644
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.h
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferDMABuf.h
+@@ -32,6 +32,7 @@
+ namespace WebCore {
+ 
+ class DMABufBuffer;
++struct DMABufBufferAttributes;
+ 
+ class CoordinatedPlatformLayerBufferDMABuf final : public CoordinatedPlatformLayerBuffer {
+ public:
+@@ -45,6 +46,7 @@ class CoordinatedPlatformLayerBufferDMABuf final : public CoordinatedPlatformLay
+     void paintToTextureMapper(TextureMapper&, const FloatRect&, const TransformationMatrix& modelViewMatrix = TransformationMatrix(), float opacity = 1.0) override;
+ 
+     std::unique_ptr<CoordinatedPlatformLayerBuffer> importDMABuf(TextureMapper&) const;
++    std::unique_ptr<CoordinatedPlatformLayerBuffer> importYUV(TextureMapper&) const;
+ 
+     Ref<DMABufBuffer> m_dmabuf;
+     WTF::UnixFileDescriptor m_fenceFD;
+diff --git a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferVideo.cpp b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferVideo.cpp
+index e04fd1fae7a28..49e1509669a68 100644
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferVideo.cpp
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferVideo.cpp
+@@ -37,25 +37,55 @@
+ #include <epoxy/gl.h>
+ #include <gst/gl/gl.h>
+ 
++#if USE(GBM)
++#include "CoordinatedPlatformLayerBufferDMABuf.h"
++#include "DMABufBuffer.h"
++#include <drm_fourcc.h>
++#include <gst/allocators/gstdmabuf.h>
++#include <wtf/unix/UnixFileDescriptor.h>
++#endif
++
+ namespace WebCore {
+ 
+ std::unique_ptr<CoordinatedPlatformLayerBufferVideo> CoordinatedPlatformLayerBufferVideo::create(GstSample* sample, std::optional<GstVideoDecoderPlatform> videoDecoderPlatform, bool gstGLEnabled, OptionSet<TextureMapperFlags> flags)
+ {
+-    GstVideoInfo videoInfo;
+-    if (UNLIKELY(!getSampleVideoInfo(sample, videoInfo)))
++    GstCaps* caps = gst_sample_get_caps(sample);
++    if (UNLIKELY(!caps))
+         return nullptr;
+ 
++    GstVideoInfo videoInfo;
++    gst_video_info_init(&videoInfo);
++
++    std::optional<std::pair<uint32_t, uint64_t>> dmabufFormat;
++#if USE(GBM) && GST_CHECK_VERSION(1, 24, 0)
++    GstVideoInfoDmaDrm drmVideoInfo;
++    gst_video_info_dma_drm_init(&drmVideoInfo);
++    if (gst_video_is_dma_drm_caps(caps)) {
++        if (!gst_video_info_dma_drm_from_caps(&drmVideoInfo, caps))
++            return nullptr;
++
++        if (!gst_video_info_dma_drm_to_video_info(&drmVideoInfo, &videoInfo))
++            return nullptr;
++
++        dmabufFormat = std::pair<uint32_t, uint64_t> { drmVideoInfo.drm_fourcc, drmVideoInfo.drm_modifier };
++    }
++#endif
++    if (!dmabufFormat) {
++        if (!gst_video_info_from_caps(&videoInfo, caps))
++            return nullptr;
++    }
++
+     auto* buffer = gst_sample_get_buffer(sample);
+     if (UNLIKELY(!GST_IS_BUFFER(buffer)))
+         return nullptr;
+ 
+-    return makeUnique<CoordinatedPlatformLayerBufferVideo>(buffer, &videoInfo, videoDecoderPlatform, gstGLEnabled, flags);
++    return makeUnique<CoordinatedPlatformLayerBufferVideo>(buffer, &videoInfo, dmabufFormat, videoDecoderPlatform, gstGLEnabled, flags);
+ }
+ 
+-CoordinatedPlatformLayerBufferVideo::CoordinatedPlatformLayerBufferVideo(GstBuffer* buffer, GstVideoInfo* videoInfo, std::optional<GstVideoDecoderPlatform> videoDecoderPlatform, bool gstGLEnabled, OptionSet<TextureMapperFlags> flags)
++CoordinatedPlatformLayerBufferVideo::CoordinatedPlatformLayerBufferVideo(GstBuffer* buffer, GstVideoInfo* videoInfo, std::optional<std::pair<uint32_t, uint64_t>> dmabufFormat, std::optional<GstVideoDecoderPlatform> videoDecoderPlatform, bool gstGLEnabled, OptionSet<TextureMapperFlags> flags)
+     : CoordinatedPlatformLayerBuffer(Type::Video, IntSize(GST_VIDEO_INFO_WIDTH(videoInfo), GST_VIDEO_INFO_HEIGHT(videoInfo)), flags, nullptr)
+     , m_videoDecoderPlatform(videoDecoderPlatform)
+-    , m_buffer(createBufferIfNeeded(buffer, videoInfo, gstGLEnabled))
++    , m_buffer(createBufferIfNeeded(buffer, videoInfo, dmabufFormat, gstGLEnabled))
+ {
+ }
+ 
+@@ -80,9 +110,16 @@ std::unique_ptr<CoordinatedPlatformLayerBuffer> CoordinatedPlatformLayerBufferVi
+     return CoordinatedPlatformLayerBufferRGB::create(WTFMove(texture), m_flags, nullptr);
+ }
+ 
+-std::unique_ptr<CoordinatedPlatformLayerBuffer> CoordinatedPlatformLayerBufferVideo::createBufferIfNeeded(GstBuffer* buffer, GstVideoInfo* videoInfo, bool gstGLEnabled)
++std::unique_ptr<CoordinatedPlatformLayerBuffer> CoordinatedPlatformLayerBufferVideo::createBufferIfNeeded(GstBuffer* buffer, GstVideoInfo* videoInfo, std::optional<std::pair<uint32_t, uint64_t>> dmabufFormat, bool gstGLEnabled)
+ {
+-    if (gstGLEnabled)
++#if USE(GBM)
++    if (gst_is_dmabuf_memory(gst_buffer_peek_memory(buffer, 0)))
++        return createBufferFromDMABufMemory(buffer, videoInfo, dmabufFormat);
++#else
++    UNUSED_PARAM(dmabufFormat);
++#endif
++
++    if (gstGLEnabled && gst_is_gl_memory(gst_buffer_peek_memory(buffer, 0)))
+         return createBufferFromGLMemory(buffer, videoInfo);
+ 
+     // When not having a texture, we map the frame here and upload the pixels to a texture in the
+@@ -98,12 +135,90 @@ std::unique_ptr<CoordinatedPlatformLayerBuffer> CoordinatedPlatformLayerBufferVi
+     return nullptr;
+ }
+ 
+-std::unique_ptr<CoordinatedPlatformLayerBuffer> CoordinatedPlatformLayerBufferVideo::createBufferFromGLMemory(GstBuffer* buffer, GstVideoInfo* videoInfo)
++#if USE(GBM)
++static uint32_t videoFormatToDRMFourcc(GstVideoFormat format)
+ {
+-    GstMemory* memory = gst_buffer_peek_memory(buffer, 0);
+-    if (!gst_is_gl_memory(memory))
+-        return nullptr;
++    switch (format) {
++    case GST_VIDEO_FORMAT_BGRx:
++        return DRM_FORMAT_XRGB8888;
++    case GST_VIDEO_FORMAT_RGBx:
++        return DRM_FORMAT_XBGR8888;
++    case GST_VIDEO_FORMAT_BGRA:
++        return DRM_FORMAT_ARGB8888;
++    case GST_VIDEO_FORMAT_RGBA:
++        return DRM_FORMAT_ABGR8888;
++    case GST_VIDEO_FORMAT_I420:
++        return DRM_FORMAT_YUV420;
++    case GST_VIDEO_FORMAT_YV12:
++        return DRM_FORMAT_YVU420;
++    case GST_VIDEO_FORMAT_NV12:
++        return DRM_FORMAT_NV12;
++    case GST_VIDEO_FORMAT_NV21:
++        return DRM_FORMAT_NV21;
++    case GST_VIDEO_FORMAT_Y444:
++        return DRM_FORMAT_YUV444;
++    case GST_VIDEO_FORMAT_Y41B:
++        return DRM_FORMAT_YUV411;
++    case GST_VIDEO_FORMAT_Y42B:
++        return DRM_FORMAT_YUV422;
++    case GST_VIDEO_FORMAT_P010_10LE:
++        return DRM_FORMAT_P010;
++    default:
++        break;
++    }
++
++    return 0;
++}
++
++std::unique_ptr<CoordinatedPlatformLayerBuffer> CoordinatedPlatformLayerBufferVideo::createBufferFromDMABufMemory(GstBuffer* buffer, GstVideoInfo* videoInfo, std::optional<std::pair<uint32_t, uint64_t>> dmabufFormat)
++{
++    if (GST_VIDEO_INFO_HAS_ALPHA(videoInfo))
++        m_flags.add({ TextureMapperFlags::ShouldBlend, TextureMapperFlags::ShouldPremultiply });
++
++    static GQuark dmabufQuark = g_quark_from_static_string("wk-dmabuf-buffer");
++    auto* memory = gst_buffer_peek_memory(buffer, 0);
++    RefPtr<DMABufBuffer> dmabuf = static_cast<DMABufBuffer*>(gst_mini_object_get_qdata(GST_MINI_OBJECT_CAST(memory), dmabufQuark));
++    if (!dmabuf) {
++        const auto* videoMeta = gst_buffer_get_video_meta(buffer);
++        IntSize size(videoMeta->width, videoMeta->height);
++        uint32_t fourcc = dmabufFormat ? dmabufFormat->first : videoFormatToDRMFourcc(GST_VIDEO_INFO_FORMAT(videoInfo));
++        uint64_t modifier = dmabufFormat ? dmabufFormat->second : DRM_FORMAT_MOD_INVALID;
++        Vector<UnixFileDescriptor> fds;
++        Vector<uint32_t> offsets;
++        Vector<uint32_t> strides;
++        for (unsigned i = 0; i < videoMeta->n_planes; ++i) {
++            guint index, length;
++            gsize skip;
++            if (!gst_buffer_find_memory(buffer, videoMeta->offset[i], 1, &index, &length, &skip))
++                return nullptr;
++
++            auto* planeMemory = gst_buffer_peek_memory(buffer, index);
++            fds.append(UnixFileDescriptor { gst_dmabuf_memory_get_fd(planeMemory), UnixFileDescriptor::Duplicate });
++            offsets.append(planeMemory->offset + skip);
++            strides.append(videoMeta->stride[i]);
++        }
++        dmabuf = DMABufBuffer::create(size, fourcc, WTFMove(fds), WTFMove(offsets), WTFMove(strides), modifier);
++
++        DMABufBuffer::ColorSpace colorSpace = DMABufBuffer::ColorSpace::BT601;
++        if (gst_video_colorimetry_matches(&GST_VIDEO_INFO_COLORIMETRY(videoInfo), GST_VIDEO_COLORIMETRY_BT709))
++            colorSpace = DMABufBuffer::ColorSpace::BT709;
++        else if (gst_video_colorimetry_matches(&GST_VIDEO_INFO_COLORIMETRY(videoInfo), GST_VIDEO_COLORIMETRY_BT2020))
++            colorSpace = DMABufBuffer::ColorSpace::BT2020;
++        else if (gst_video_colorimetry_matches(&GST_VIDEO_INFO_COLORIMETRY(videoInfo), GST_VIDEO_COLORIMETRY_SMPTE240M))
++            colorSpace = DMABufBuffer::ColorSpace::SMPTE240M;
++        dmabuf->setColorSpace(colorSpace);
++
++        dmabuf->ref();
++        gst_mini_object_set_qdata(GST_MINI_OBJECT_CAST(memory), dmabufQuark, dmabuf.get(), [](gpointer data) {
++            static_cast<DMABufBuffer*>(data)->deref();
++        });
++    }
++    return CoordinatedPlatformLayerBufferDMABuf::create(dmabuf.releaseNonNull(), m_flags, nullptr);
++}
++#endif // USE(GBM)
+ 
++std::unique_ptr<CoordinatedPlatformLayerBuffer> CoordinatedPlatformLayerBufferVideo::createBufferFromGLMemory(GstBuffer* buffer, GstVideoInfo* videoInfo)
++{
+     m_isMapped = gst_video_frame_map(&m_videoFrame, videoInfo, buffer, static_cast<GstMapFlags>(GST_MAP_READ | GST_MAP_GL));
+     if (!m_isMapped)
+         return nullptr;
+@@ -111,7 +226,7 @@ std::unique_ptr<CoordinatedPlatformLayerBuffer> CoordinatedPlatformLayerBufferVi
+     if (GST_VIDEO_INFO_HAS_ALPHA(&m_videoFrame.info))
+         m_flags.add({ TextureMapperFlags::ShouldBlend, TextureMapperFlags::ShouldPremultiply });
+ 
+-    auto textureTarget = gst_gl_memory_get_texture_target(GST_GL_MEMORY_CAST(memory));
++    auto textureTarget = gst_gl_memory_get_texture_target(GST_GL_MEMORY_CAST(gst_buffer_peek_memory(buffer, 0)));
+     if (textureTarget == GST_GL_TEXTURE_TARGET_EXTERNAL_OES)
+         return CoordinatedPlatformLayerBufferExternalOES::create(*reinterpret_cast<GLuint*>(m_videoFrame.data[0]), m_size, m_flags, nullptr);
+ 
+@@ -154,36 +269,36 @@ std::unique_ptr<CoordinatedPlatformLayerBuffer> CoordinatedPlatformLayerBufferVi
+ 
+ void CoordinatedPlatformLayerBufferVideo::paintToTextureMapper(TextureMapper& textureMapper, const FloatRect& targetRect, const TransformationMatrix& modelViewMatrix, float opacity)
+ {
+-    if (!m_isMapped)
+-        return;
+-    if (m_videoDecoderPlatform != GstVideoDecoderPlatform::OpenMAX) {
+-        if (auto* meta = gst_buffer_get_gl_sync_meta(m_videoFrame.buffer)) {
+-            GstMemory* memory = gst_buffer_peek_memory(m_videoFrame.buffer, 0);
+-            GstGLContext* context = reinterpret_cast<GstGLBaseMemory*>(memory)->context;
+-            gst_gl_sync_meta_wait_cpu(meta, context);
+-        }
+-    }
+-
+-    if (!m_buffer) {
+-        OptionSet<BitmapTexture::Flags> textureFlags;
+-        if (GST_VIDEO_INFO_HAS_ALPHA(&m_videoFrame.info))
+-            textureFlags.add(BitmapTexture::Flags::SupportsAlpha);
+-        auto texture = textureMapper.acquireTextureFromPool(m_size, textureFlags);
+-
+-        auto* meta = gst_buffer_get_video_gl_texture_upload_meta(m_videoFrame.buffer);
+-        if (meta && meta->n_textures == 1) {
+-            guint ids[4] = { texture->id(), 0, 0, 0 };
+-            if (gst_video_gl_texture_upload_meta_upload(meta, ids))
+-                m_buffer = CoordinatedPlatformLayerBufferRGB::create(WTFMove(texture), m_flags, nullptr);
++    if (m_isMapped) {
++        if (m_videoDecoderPlatform != GstVideoDecoderPlatform::OpenMAX) {
++            if (auto* meta = gst_buffer_get_gl_sync_meta(m_videoFrame.buffer)) {
++                GstMemory* memory = gst_buffer_peek_memory(m_videoFrame.buffer, 0);
++                GstGLContext* context = reinterpret_cast<GstGLBaseMemory*>(memory)->context;
++                gst_gl_sync_meta_wait_cpu(meta, context);
++            }
+         }
+ 
+         if (!m_buffer) {
+-            int stride = GST_VIDEO_FRAME_PLANE_STRIDE(&m_videoFrame, 0);
+-            const void* srcData = GST_VIDEO_FRAME_PLANE_DATA(&m_videoFrame, 0);
+-            texture->updateContents(srcData, IntRect(0, 0, m_size.width(), m_size.height()), IntPoint(0, 0), stride);
+-            m_buffer = CoordinatedPlatformLayerBufferRGB::create(WTFMove(texture), m_flags, nullptr);
+-            gst_video_frame_unmap(&m_videoFrame);
+-            m_isMapped = false;
++            OptionSet<BitmapTexture::Flags> textureFlags;
++            if (GST_VIDEO_INFO_HAS_ALPHA(&m_videoFrame.info))
++                textureFlags.add(BitmapTexture::Flags::SupportsAlpha);
++            auto texture = textureMapper.acquireTextureFromPool(m_size, textureFlags);
++
++            auto* meta = gst_buffer_get_video_gl_texture_upload_meta(m_videoFrame.buffer);
++            if (meta && meta->n_textures == 1) {
++                guint ids[4] = { texture->id(), 0, 0, 0 };
++                if (gst_video_gl_texture_upload_meta_upload(meta, ids))
++                    m_buffer = CoordinatedPlatformLayerBufferRGB::create(WTFMove(texture), m_flags, nullptr);
++            }
++
++            if (!m_buffer) {
++                int stride = GST_VIDEO_FRAME_PLANE_STRIDE(&m_videoFrame, 0);
++                const void* srcData = GST_VIDEO_FRAME_PLANE_DATA(&m_videoFrame, 0);
++                texture->updateContents(srcData, IntRect(0, 0, m_size.width(), m_size.height()), IntPoint(0, 0), stride);
++                m_buffer = CoordinatedPlatformLayerBufferRGB::create(WTFMove(texture), m_flags, nullptr);
++                gst_video_frame_unmap(&m_videoFrame);
++                m_isMapped = false;
++            }
+         }
+     }
+ 
+diff --git a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferVideo.h b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferVideo.h
+index 4290cc46c1f84..100a1e25fc092 100644
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferVideo.h
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferVideo.h
+@@ -34,7 +34,7 @@ namespace WebCore {
+ class CoordinatedPlatformLayerBufferVideo final : public CoordinatedPlatformLayerBuffer {
+ public:
+     static std::unique_ptr<CoordinatedPlatformLayerBufferVideo> create(GstSample*, std::optional<GstVideoDecoderPlatform>, bool gstGLEnabled, OptionSet<TextureMapperFlags>);
+-    CoordinatedPlatformLayerBufferVideo(GstBuffer*, GstVideoInfo*, std::optional<GstVideoDecoderPlatform>, bool gstGLEnabled, OptionSet<TextureMapperFlags>);
++    CoordinatedPlatformLayerBufferVideo(GstBuffer*, GstVideoInfo*, std::optional<std::pair<uint32_t, uint64_t>>, std::optional<GstVideoDecoderPlatform>, bool gstGLEnabled, OptionSet<TextureMapperFlags>);
+     virtual ~CoordinatedPlatformLayerBufferVideo();
+ 
+     std::unique_ptr<CoordinatedPlatformLayerBuffer> copyBuffer() const;
+@@ -42,7 +42,10 @@ class CoordinatedPlatformLayerBufferVideo final : public CoordinatedPlatformLaye
+ private:
+     void paintToTextureMapper(TextureMapper&, const FloatRect&, const TransformationMatrix& modelViewMatrix = TransformationMatrix(), float opacity = 1.0) override;
+ 
+-    std::unique_ptr<CoordinatedPlatformLayerBuffer> createBufferIfNeeded(GstBuffer*, GstVideoInfo*, bool gstGLEnabled);
++    std::unique_ptr<CoordinatedPlatformLayerBuffer> createBufferIfNeeded(GstBuffer*, GstVideoInfo*, std::optional<std::pair<uint32_t, uint64_t>>, bool gstGLEnabled);
++#if USE(GBM)
++    std::unique_ptr<CoordinatedPlatformLayerBuffer> createBufferFromDMABufMemory(GstBuffer*, GstVideoInfo*, std::optional<std::pair<uint32_t, uint64_t>>);
++#endif
+     std::unique_ptr<CoordinatedPlatformLayerBuffer> createBufferFromGLMemory(GstBuffer*, GstVideoInfo*);
+ 
+     GstVideoFrame m_videoFrame;
+diff --git a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferYUV.cpp b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferYUV.cpp
+index fd07f1654a96e..e813c37c06798 100644
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferYUV.cpp
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferYUV.cpp
+@@ -36,14 +36,31 @@ std::unique_ptr<CoordinatedPlatformLayerBufferYUV> CoordinatedPlatformLayerBuffe
+     return makeUnique<CoordinatedPlatformLayerBufferYUV>(planeCount, WTFMove(planes), WTFMove(yuvPlane), WTFMove(yuvPlaneOffset), yuvToRgbColorSpace, size, flags, WTFMove(fence));
+ }
+ 
++std::unique_ptr<CoordinatedPlatformLayerBufferYUV> CoordinatedPlatformLayerBufferYUV::create(unsigned planeCount, Vector<RefPtr<BitmapTexture>, 4>&& textures, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace yuvToRgbColorSpace, const IntSize& size, OptionSet<TextureMapperFlags> flags, std::unique_ptr<GLFence>&& fence)
++{
++    return makeUnique<CoordinatedPlatformLayerBufferYUV>(planeCount, WTFMove(textures), WTFMove(yuvPlane), WTFMove(yuvPlaneOffset), yuvToRgbColorSpace, size, flags, WTFMove(fence));
++}
++
+ CoordinatedPlatformLayerBufferYUV::CoordinatedPlatformLayerBufferYUV(unsigned planeCount, std::array<unsigned, 4>&& planes, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace yuvToRgbColorSpace, const IntSize& size, OptionSet<TextureMapperFlags> flags, std::unique_ptr<GLFence>&& fence)
+     : CoordinatedPlatformLayerBuffer(Type::YUV, size, flags, WTFMove(fence))
+     , m_planeCount(planeCount)
+-    , m_planes(planes)
+-    , m_yuvPlane(yuvPlane)
+-    , m_yuvPlaneOffset(yuvPlaneOffset)
++    , m_planes(WTFMove(planes))
++    , m_yuvPlane(WTFMove(yuvPlane))
++    , m_yuvPlaneOffset(WTFMove(yuvPlaneOffset))
++    , m_yuvToRgbColorSpace(yuvToRgbColorSpace)
++{
++}
++
++CoordinatedPlatformLayerBufferYUV::CoordinatedPlatformLayerBufferYUV(unsigned planeCount, Vector<RefPtr<BitmapTexture>, 4>&& textures, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace yuvToRgbColorSpace, const IntSize& size, OptionSet<TextureMapperFlags> flags, std::unique_ptr<GLFence>&& fence)
++    : CoordinatedPlatformLayerBuffer(Type::YUV, size, flags, WTFMove(fence))
++    , m_planeCount(planeCount)
++    , m_textures(WTFMove(textures))
++    , m_yuvPlane(WTFMove(yuvPlane))
++    , m_yuvPlaneOffset(WTFMove(yuvPlaneOffset))
+     , m_yuvToRgbColorSpace(yuvToRgbColorSpace)
+ {
++    for (unsigned i = 0; i < m_textures.size(); ++i)
++        m_planes[i] = m_textures[i] ? m_textures[i]->id() : 0;
+ }
+ 
+ CoordinatedPlatformLayerBufferYUV::~CoordinatedPlatformLayerBufferYUV() = default;
+diff --git a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferYUV.h b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferYUV.h
+index 1665f59b331dc..38cf1d131bf63 100644
+--- a/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferYUV.h
++++ b/Source/WebCore/platform/graphics/texmap/coordinated/CoordinatedPlatformLayerBufferYUV.h
+@@ -30,17 +30,22 @@
+ 
+ namespace WebCore {
+ 
++class BitmapTexture;
++
+ class CoordinatedPlatformLayerBufferYUV final : public CoordinatedPlatformLayerBuffer {
+ public:
+     enum class YuvToRgbColorSpace : uint8_t { BT601, BT709, BT2020, SMPTE240M };
+     static std::unique_ptr<CoordinatedPlatformLayerBufferYUV> create(unsigned planeCount, std::array<unsigned, 4>&& planes, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace, const IntSize&, OptionSet<TextureMapperFlags>, std::unique_ptr<GLFence>&&);
++    static std::unique_ptr<CoordinatedPlatformLayerBufferYUV> create(unsigned planeCount, Vector<RefPtr<BitmapTexture>, 4>&& textures, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace, const IntSize&, OptionSet<TextureMapperFlags>, std::unique_ptr<GLFence>&&);
+     CoordinatedPlatformLayerBufferYUV(unsigned planeCount, std::array<unsigned, 4>&& planes, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace, const IntSize&, OptionSet<TextureMapperFlags>, std::unique_ptr<GLFence>&&);
++    CoordinatedPlatformLayerBufferYUV(unsigned planeCount, Vector<RefPtr<BitmapTexture>, 4>&& textures, std::array<unsigned, 4>&& yuvPlane, std::array<unsigned, 4>&& yuvPlaneOffset, YuvToRgbColorSpace, const IntSize&, OptionSet<TextureMapperFlags>, std::unique_ptr<GLFence>&&);
+     virtual ~CoordinatedPlatformLayerBufferYUV();
+ 
+ private:
+     void paintToTextureMapper(TextureMapper&, const FloatRect&, const TransformationMatrix& modelViewMatrix = TransformationMatrix(), float opacity = 1.0) override;
+ 
+     unsigned m_planeCount { 0 };
++    Vector<RefPtr<BitmapTexture>, 4> m_textures;
+     std::array<unsigned, 4> m_planes;
+     std::array<unsigned, 4> m_yuvPlane;
+     std::array<unsigned, 4> m_yuvPlaneOffset;
+diff --git a/Source/cmake/OptionsGTK.cmake b/Source/cmake/OptionsGTK.cmake
+index 42ce799e44620..b30458ab20225 100644
+--- a/Source/cmake/OptionsGTK.cmake
++++ b/Source/cmake/OptionsGTK.cmake
+@@ -359,7 +359,6 @@ if (USE_GBM)
+     WEBKIT_CHECK_HAVE_FUNCTION(HAVE_GBM_BO_GET_FD_FOR_PLANE gbm_bo_get_fd_for_plane gbm.h)
+     WEBKIT_CHECK_HAVE_FUNCTION(HAVE_GBM_BO_CREATE_WITH_MODIFIERS2 gbm_bo_create_with_modifiers2 gbm.h)
+     unset(CMAKE_REQUIRED_LIBRARIES)
+-    SET_AND_EXPOSE_TO_BUILD(USE_TEXTURE_MAPPER_DMABUF ON)
+ endif ()
+ 
+ if (ENABLE_SPEECH_SYNTHESIS)
+diff --git a/Source/cmake/OptionsWPE.cmake b/Source/cmake/OptionsWPE.cmake
+index dbff8a3d4de5f..7cb3b7e2a2732 100644
+--- a/Source/cmake/OptionsWPE.cmake
++++ b/Source/cmake/OptionsWPE.cmake
+@@ -409,7 +409,6 @@ if (USE_GBM)
+     WEBKIT_CHECK_HAVE_FUNCTION(HAVE_GBM_BO_GET_FD_FOR_PLANE gbm_bo_get_fd_for_plane gbm.h)
+     WEBKIT_CHECK_HAVE_FUNCTION(HAVE_GBM_BO_CREATE_WITH_MODIFIERS2 gbm_bo_create_with_modifiers2 gbm.h)
+     unset(CMAKE_REQUIRED_LIBRARIES)
+-    SET_AND_EXPOSE_TO_BUILD(USE_TEXTURE_MAPPER_DMABUF TRUE)
+ endif ()
+ 
+ if (USE_LIBBACKTRACE)
