@@ -13,6 +13,7 @@ Summary:        A WebKit port optimized for low-end devices
 License:        LGPLv2 and BSD
 URL:            https://www.%{name}.org/
 Source0:        https://wpewebkit.org/releases/%{name}-%{version}.tar.xz
+Patch0:         0001-Add-support-for-DMA-BUF-to-GL-video-sink.patch
 
 BuildRequires: atk-devel at-spi2-atk-devel
 BuildRequires: bison
