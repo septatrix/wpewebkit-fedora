@@ -6,13 +6,16 @@
 cp -p %1 _license_files/$(echo '%1' | sed -e 's!/!.!g')
 
 Name:           wpewebkit
-Version:        2.44.4
+Version:        2.45.6
 Release:        %autorelease
 Summary:        A WebKit port optimized for low-end devices
 
+%global commit da9c861d1d58a6b617f00d277d2d8d9f07ce5f1b
+%global shortcommit %(c=%{commit}; echo ${c:0:7})
+
 License:        LGPLv2 and BSD
 URL:            https://www.%{name}.org/
-Source0:        https://wpewebkit.org/releases/%{name}-%{version}.tar.xz
+Source0:        https://github.com/WebKit/WebKit/archive/%{commit}.tar.gz
 Patch0:         0001-Add-support-for-DMA-BUF-to-GL-video-sink.patch
 
 BuildRequires: atk-devel at-spi2-atk-devel
@@ -92,7 +95,7 @@ The %{name}-devel package contains libraries, build data, and header
 files for developing applications that use %{name}
 
 %prep
-%autosetup -p1 -n wpewebkit-%{version}
+%autosetup -p1 -n WebKit-%{commit}
 
 %build
 # Increase the DIE limit so our debuginfo packages could be size optimized.
