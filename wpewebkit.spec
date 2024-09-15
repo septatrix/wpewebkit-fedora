@@ -75,6 +75,7 @@ BuildRequires: pkgconfig(libavif)
 BuildRequires: pkgconfig(libdrm)
 BuildRequires: pkgconfig(libtasn1)
 BuildRequires: pkgconfig(libsoup-3.0)
+BuildRequires: pkgconfig(libinput)
 
 Requires: atk
 Requires: at-spi2-atk
