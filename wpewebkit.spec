@@ -190,6 +190,7 @@ export NINJA_STATUS="[%f/%t][%e] "
 %files
 %{_bindir}/WPEWebDriver
 %{_libdir}/libWPEWebKit-2.0.so.*
+%{_libdir}/libWPEPlatform-2.0.so.*
 %{_libexecdir}/wpe-webkit-2.0
 %{_libdir}/wpe-webkit-2.0
 # NEWS not included in repos themselves
@@ -203,6 +204,7 @@ export NINJA_STATUS="[%f/%t][%e] "
 %files devel
 %{_includedir}/wpe-webkit-2.0
 %{_libdir}/libWPEWebKit-2.0.so
+%{_libdir}/libWPEPlatform-2.0.so
 %{_libdir}/pkgconfig/*.pc
 
 
