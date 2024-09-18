@@ -14,6 +14,8 @@ License:        LGPLv2 and BSD
 URL:            https://www.%{name}.org/
 Source0:        https://wpewebkit.org/releases/%{name}-%{version}.tar.xz
 
+Patch0:         0001-CMake-WPE-ENABLE_WPE_PLATFORM-cannot-be-toggled.patch
+
 BuildRequires: atk-devel at-spi2-atk-devel
 BuildRequires: bison
 BuildRequires: cairo-devel
@@ -137,6 +139,7 @@ files for developing applications that use %{name}
   -DENABLE_DOCUMENTATION=OFF \
   -DENABLE_INTROSPECTION=OFF \
   -DUSE_LIBBACKTRACE=OFF \
+  -DENABLE_WPE_PLATFORM=OFF \
   -GNinja
 
 
