@@ -31,6 +31,7 @@ BuildRequires: pkgconfig(gobject-introspection-1.0)
 BuildRequires: libatomic
 BuildRequires: libepoxy-devel
 BuildRequires: libicu-devel
+BuildRequires: libinput-devel
 BuildRequires: libjpeg-devel
 BuildRequires: libjxl-devel
 BuildRequires: libpng-devel
