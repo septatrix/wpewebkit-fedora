@@ -136,6 +136,8 @@ touch Tools/{flatpak,TestRunnerShared,ImageDiff,WebKitTestRunner}/CMakeLists.txt
   -DPORT=WPE \
   -DCMAKE_BUILD_TYPE=Release \
   -DDEVELOPER_MODE=ON \
+  -DENABLE_API_TESTS=OFF \
+  -DENABLE_LAYOUT_TESTS=OFF \
   -DENABLE_WPE_QT_API=OFF \
   -DENABLE_COG=OFF \
   -DENABLE_MINIBROWSER=ON \
