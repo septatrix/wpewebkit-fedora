@@ -97,6 +97,12 @@ Requires:       %{name}%{?_isa} = %{version}-%{release}
 The %{name}-devel package contains libraries, build data, and header
 files for developing applications that use %{name}
 
+%package        devel-docs
+Summary:        Documentation files for %{name}-devel
+
+%description    devel-docs
+Documentation of the %{name}-devel APIs
+
 %prep
 %autosetup -p1 -n wpewebkit-%{version}
 
@@ -134,8 +140,6 @@ files for developing applications that use %{name}
   -DPORT=WPE \
   -DCMAKE_BUILD_TYPE=Release \
   -DENABLE_MINIBROWSER=ON \
-  -DENABLE_DOCUMENTATION=OFF \
-  -DENABLE_INTROSPECTION=OFF \
   -DENABLE_WPE_LEGACY_API=OFF \
   -DUSE_LIBBACKTRACE=OFF \
   -DENABLE_WPE_PLATFORM=ON \
@@ -202,6 +206,10 @@ export NINJA_STATUS="[%f/%t][%e] "
 %{_libdir}/libWPEWebKit-2.0.so
 %{_libdir}/pkgconfig/*.pc
 
+%files devel-docs
+%{_datadir}/doc/
+%{_datadir}/gir-1.0/
+%{_libdir}/girepository-1.0/
 
 %changelog
 %autochangelog
